@@ -17,6 +17,8 @@ Plotting_Freq = 0.002   # Time (in seconds) between points
 # --- CHOOSE YOUR SHAPE TO DRAW ---
 shape_to_plot = "C"  # "S" = Square, "C" = Circle, "T" = Triangle
 Plot = True          # Whether to plot the path (Set to True to verify layout)
+user = "Conor"
+#user = "Jamie"
 
 # --- Step Calculation ---
 TOTAL_STEPS = int(Time_For_Drawing / Plotting_Freq)
@@ -264,7 +266,10 @@ if __name__ == "__main__":
         
     # === CONFIGURE SERIAL PORT ===
     try:
-        ser = serial.Serial('COM5', 230400, timeout=1)
+        if user == "Conor":
+            ser = serial.Serial('COM5', 230400, timeout=1)
+        else:
+            ser = serial.Serial('Jamies USB port', 230400, timeout=1)
         time.sleep(2)
     except serial.SerialException as e:
         print(f"\n--- ERROR: Could not open serial port ---")

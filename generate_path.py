@@ -15,10 +15,8 @@ Time_For_Drawing = 2.5  # Total time (in seconds) for the *entire* motion
 Plotting_Freq = 0.002   # Time (in seconds) between points
 
 # --- CHOOSE YOUR SHAPE TO DRAW ---
-shape_to_plot = "S"  # "S" = Square, "C" = Circle, "T" = Triangle
+shape_to_plot = "C"  # "S" = Square, "C" = Circle, "T" = Triangle
 Plot = True          # Whether to plot the path (Set to True to verify layout)
-user = 'Conor'
-#user = 'Jamie'
 
 # --- Step Calculation ---
 TOTAL_STEPS = int(Time_For_Drawing / Plotting_Freq)
@@ -105,10 +103,10 @@ def generate_eased_line(x_start, y_start, x_end, y_end, steps, cluster_steps):
 
 def generate_square(centre_x, centre_y, side_length, steps_per_side, cluster_steps):
     half_side = side_length / 2.0
-    c1 = (centre_x - half_side, centre_y + half_side)
-    c2 = (centre_x - half_side, centre_y - half_side)
-    c3 = (centre_x + half_side, centre_y - half_side)
-    c4 = (centre_x + half_side, centre_y + half_side)
+    c1 = (centre_x + half_side, centre_y + half_side) 
+    c2 = (centre_x - half_side, centre_y + half_side) 
+    c3 = (centre_x - half_side, centre_y - half_side) 
+    c4 = (centre_x + half_side, centre_y - half_side) 
     print(f"Square side: {steps_per_side} steps = {cluster_steps} (cluster) + {steps_per_side - 2*cluster_steps} (linear) + {cluster_steps} (cluster)")
     points = []
     points.extend(generate_eased_line(c1[0], c1[1], c2[0], c2[1], steps_per_side, cluster_steps)[:-1])
@@ -128,9 +126,9 @@ def generate_circle(centre_x, centre_y, radius, steps):
 
 def generate_triangle(start_x, start_y, side_length, steps_per_side, cluster_steps):
     height = side_length * (math.sqrt(3) / 2.0)
-    v1 = (start_x, start_y)
-    v2 = (start_x + side_length, start_y)
-    v3 = (start_x + side_length / 2.0, start_y + height)
+    v3 = (start_x, start_y)
+    v1 = (start_x + side_length, start_y)
+    v2 = (start_x + side_length / 2.0, start_y + height)
     print(f"Triangle side: {steps_per_side} steps = {cluster_steps} (cluster) + {steps_per_side - 2*cluster_steps} (linear) + {cluster_steps} (cluster)")
     points = []
     points.extend(generate_eased_line(v1[0], v1[1], v2[0], v2[1], steps_per_side, cluster_steps)[:-1])
@@ -191,7 +189,7 @@ if __name__ == "__main__":
         cluster_steps_per_cluster = total_cluster_steps // 8
         steps_per_side_sq = linear_steps_per_side + (2 * cluster_steps_per_cluster)
         xy_points = generate_square(
-            centre_x=100, centre_y=-50, side_length=83, 
+            centre_x=120, centre_y=-100, side_length=83, 
             steps_per_side=steps_per_side_sq, 
             cluster_steps=cluster_steps_per_cluster
         )
@@ -213,7 +211,7 @@ if __name__ == "__main__":
         cluster_steps_per_cluster = total_cluster_steps // 6
         steps_per_side_tri = linear_steps_per_side + (2 * cluster_steps_per_cluster)
         xy_points = generate_triangle(
-            start_x=100, start_y=50, side_length=97, 
+            start_x=80, start_y=50, side_length=97, 
             steps_per_side=steps_per_side_tri,
             cluster_steps=cluster_steps_per_cluster
         )
@@ -266,12 +264,8 @@ if __name__ == "__main__":
         
     # === CONFIGURE SERIAL PORT ===
     try:
-        if user = 'Conor':
-            ser = serial.Serial('COM5', 230400, timeout=1)
-            time.sleep(2)
-        elif user = 'Jamie':
-            ser = serial.Serial('Jamies USB Port', 230400, timeout=1)
-            time.sleep(2)
+        ser = serial.Serial('COM5', 230400, timeout=1)
+        time.sleep(2)
     except serial.SerialException as e:
         print(f"\n--- ERROR: Could not open serial port ---")
         print(f"Details: {e}")
@@ -302,4 +296,3 @@ if __name__ == "__main__":
     finally:
         print("Done streaming.")
         ser.close()
-

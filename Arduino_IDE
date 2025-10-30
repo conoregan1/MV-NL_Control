@@ -17,11 +17,13 @@ volatile int posi_2 = 0;
 
 int pos_1 = 0, pos_2 = 0;
 float ref_1 = 0, ref_2 = 0;
-float e_1 = 0, e_2 = 0, e_prev_1 = 0, e_prev_2 = 0, sum_e_1 = 0, sum_e_2 = 0;
+float e_1 = 0, e_2 = 0, e_prev_1 = 0, e_prev_2 = 0, sum_e_1 = 0, sum_e_2 = 0, uf_prev_1 = 0, uf_prev_2 = 0, d_filt_prev_1 = 0, d_filt_prev_2 = 0;
 int u_1 = 0, u_2 = 0, u_sign_1 = 0, u_sign_2 = 0;
 int u_amplitude_1 = 0, u_amplitude_2 = 0;
 float k_p = 8.0, k_d = 0.5, k_i = 10;
 float counts_per_rotation = 2100.0; // counts per rotation
+float alpha_u = 0;
+float alpha_d = 0;
 
 unsigned long loop_prev;
 
@@ -80,29 +82,52 @@ void loop() {
     loop_prev = micros();
 
     // Motor 1
+
     e_1 = ref_1 - pos_1;
-    
+
     if (e_1 <= 100 && e_1 >= -100) {
       sum_e_1 += e_1 * loop_time / 1000000.0;
+    } else {
+      sum_e_1 = 0.0;
     }
-    u_1 = k_p * e_1 + k_d * (e_1 - e_prev_1) * 1000000.0 / loop_time + k_i * sum_e_1;
-    u_1 = constrain(u_1, -255, 255);
-    u_sign_1 = (u_1 > 0) - (u_1 < 0);
-    u_amplitude_1 = abs(u_1);
+    
+    float raw_derivative_1 = (e_1 - e_prev_1) * 1000000.0 / loop_time;
+    float d_filt_1 = alpha_d * raw_derivative_1 + (1.0 - alpha_d) * d_filt_prev_1;
+
+    u_1 = k_p * e_1 + k_d * d_filt_1 + k_i * sum_e_1;
+    float uf_1 = alpha_u * uf_prev_1 + (1.0 - alpha_u) * u_1;
+    
+    uf_1 = constrain(uf_1, -255, 255);
+    u_sign_1 = (uf_1 > 0) - (uf_1 < 0);
+    u_amplitude_1 = abs(uf_1);
+
+    uf_prev_1 = uf_1;
     e_prev_1 = e_1;
+    d_filt_prev_1 = d_filt_1;
 
     // Motor 2
     e_2 = ref_2 - pos_2;
 
     if (e_2 <= 100 && e_2 >= -100) {
       sum_e_2 += e_2 * loop_time / 1000000.0;
+    } else {
+      sum_e_2 = 0.0;
     }
+    
+    float raw_derivative_2 = (e_2 - e_prev_2) * 1000000.0 / loop_time;
+    
+    float d_filt_2 = alpha_d * raw_derivative_2 + (1.0 - alpha_d) * d_filt_prev_2;
 
-    u_2 = k_p * e_2 + k_d * (e_2 - e_prev_2) * 1000000.0 / loop_time + k_i * sum_e_2;
-    u_2 = constrain(u_2, -255, 255);
-    u_sign_2 = (u_2 > 0) - (u_2 < 0);
-    u_amplitude_2 = abs(u_2);
+    u_2 = k_p * e_2 + k_d * d_filt_2 + k_i * sum_e_2;
+    float uf_2 = alpha_u * uf_prev_2 + (1.0 - alpha_u) * u_2;
+    
+    uf_2 = constrain(uf_2, -255, 255);
+    u_sign_2 = (uf_2 > 0) - (uf_2 < 0);
+    u_amplitude_2 = abs(uf_2);
+
+    uf_prev_2 = uf_2;
     e_prev_2 = e_2;
+    d_filt_prev_2 = d_filt_2;
   }
 
   // === 4. Drive motors ===

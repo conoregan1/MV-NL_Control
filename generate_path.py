@@ -351,11 +351,10 @@ try:
         ser.write(line.encode('utf-8'))
         print(line.strip())
         response = ser.readline().decode('utf-8').strip()
-        if response:
-            print(f"Pico says: {response}")
         time.sleep(0.05)
 except serial.SerialException as e:
     print(f"Serial error during streaming: {e}")
 finally:
     print("Done streaming.")
     ser.close()
+

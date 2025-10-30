@@ -294,11 +294,11 @@ if __name__ == "__main__":
 
     
     # --- Plot the generated path ---
-    if xy_points:
-        plot_path_with_colours(xy_points, arm_lengths=(L1, L2))
-    else:
-        print("No (x, y) points were generated. Exiting.")
-        exit()
+    # if xy_points:
+    #     plot_path_with_colours(xy_points, arm_lengths=(L1, L2))
+    # else:
+    #     print("No (x, y) points were generated. Exiting.")
+    #     exit()
 
     
     # --- Process the chosen path ---
@@ -332,7 +332,7 @@ if __name__ == "__main__":
         
 # === CONFIGURE SERIAL PORT ===
 try:
-    ser = serial.Serial('/dev/cu.usbmodem11401', 230400, timeout=1)
+    ser = serial.Serial('COM5', 230400, timeout=1)
     time.sleep(2)
 except serial.SerialException as e:
     print(f"\n--- ERROR: Could not open serial port ---")

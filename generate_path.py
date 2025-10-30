@@ -1,3 +1,4 @@
+
 import math
 import serial
 import time
@@ -15,8 +16,8 @@ MOVE_TO_START_AT_BEGINNING = True # Set to True to move from home to start
 RETURN_TO_HOME_AT_END = True      # Set to True to add a "go home" path
 # (Number of points in the path)
 TOTAL_STEPS = 400  # More steps = smoother, but uses more memory
-STEPS_FOR_START_PATH = int(TOTAL_STEPS / 20 + 2)       # How many points for the move-to-start journey
-STEPS_FOR_HOME_PATH = int(TOTAL_STEPS / 20)       # How many points for the return journey
+STEPS_FOR_START_PATH = int(TOTAL_STEPS / 5 + 2)       # How many points for the move-to-start journey
+STEPS_FOR_HOME_PATH = int(TOTAL_STEPS / 10)       # How many points for the return journey
 
 # --- 2. CONFIGURE YOUR PATH ---
 
@@ -246,7 +247,7 @@ if __name__ == "__main__":
     # 2. Circle (Does not use easing)
     # print("Generating Circle Path...")
     # path_name = "path_circle"
-    # xy_points = generate_circle(centre_x=120, centre_y=0, radius=41, steps=TOTAL_STEPS)
+    # xy_points = generate_circle(centre_x=180, centre_y=0, radius=41, steps=TOTAL_STEPS)
 
     # 3. Equilateral Triangle
     print("Generating Triangle Path...")
@@ -294,11 +295,11 @@ if __name__ == "__main__":
 
     
     # --- Plot the generated path ---
-    # if xy_points:
-    #     plot_path_with_colours(xy_points, arm_lengths=(L1, L2))
-    # else:
-    #     print("No (x, y) points were generated. Exiting.")
-    #     exit()
+    if xy_points:
+        plot_path_with_colours(xy_points, arm_lengths=(L1, L2))
+    else:
+        print("No (x, y) points were generated. Exiting.")
+        exit()
 
     
     # --- Process the chosen path ---
@@ -315,7 +316,7 @@ if __name__ == "__main__":
             count2 = radians_to_counts(theta2, COUNTS_PER_ROTATION)
             
             motor1_counts.append(count1)
-            motor2_counts.append(count2)
+            motor2_counts.append(-count2)
             
     # --- Print the C++ Arrays ---
     if motor1_counts:
@@ -332,7 +333,7 @@ if __name__ == "__main__":
         
 # === CONFIGURE SERIAL PORT ===
 try:
-    ser = serial.Serial('COM5', 230400, timeout=1)
+    ser = serial.Serial('/dev/cu.usbmodem11401', 230400, timeout=1)
     time.sleep(2)
 except serial.SerialException as e:
     print(f"\n--- ERROR: Could not open serial port ---")
@@ -351,10 +352,9 @@ try:
         ser.write(line.encode('utf-8'))
         print(line.strip())
         response = ser.readline().decode('utf-8').strip()
-        time.sleep(0.05)
+        time.sleep(0.005)
 except serial.SerialException as e:
     print(f"Serial error during streaming: {e}")
 finally:
     print("Done streaming.")
     ser.close()
-

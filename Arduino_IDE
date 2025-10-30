@@ -1,0 +1,137 @@
+#include <SimplyAtomic.h>
+
+#define ENCA_1 0
+#define ENCB_1 1
+#define PWM_pin_1 2
+#define IN1_1 3
+#define IN2_1 4
+
+#define ENCA_2 6
+#define ENCB_2 7
+#define PWM_pin_2 8
+#define IN1_2 9
+#define IN2_2 10
+
+volatile int posi_1 = 0;
+volatile int posi_2 = 0;
+
+int pos_1 = 0, pos_2 = 0;
+float ref_1 = 0, ref_2 = 0;
+float e_1 = 0, e_2 = 0, e_prev_1 = 0, e_prev_2 = 0, sum_e_1 = 0, sum_e_2 = 0;
+int u_1 = 0, u_2 = 0, u_sign_1 = 0, u_sign_2 = 0;
+int u_amplitude_1 = 0, u_amplitude_2 = 0;
+float k_p = 8.0, k_d = 0.5, k_i = 10;
+float counts_per_rotation = 2100.0; // counts per rotation
+
+unsigned long loop_prev;
+
+void setup() {
+  Serial.begin(230400);
+  Serial.setTimeout(5);
+
+  pinMode(ENCA_1, INPUT);
+  pinMode(ENCB_1, INPUT);
+  pinMode(ENCA_2, INPUT);
+  pinMode(ENCB_2, INPUT);
+  attachInterrupt(digitalPinToInterrupt(ENCA_1), readEncoder_1, RISING);
+  attachInterrupt(digitalPinToInterrupt(ENCA_2), readEncoder_2, RISING);
+
+  pinMode(PWM_pin_1, OUTPUT);
+  pinMode(IN1_1, OUTPUT);
+  pinMode(IN2_1, OUTPUT);
+  pinMode(PWM_pin_2, OUTPUT);
+  pinMode(IN1_2, OUTPUT);
+  pinMode(IN2_2, OUTPUT);
+
+  loop_prev = micros();
+  Serial.println("Ready to receive motor angles...");
+}
+
+void loop() {
+  // === 1. Check for incoming angles from Python ===
+  if (Serial.available() > 0) {
+    String line = Serial.readStringUntil('\n');   // read the full line
+    float target_deg_1, target_deg_2;
+
+    // Try to extract two numbers from the line
+    if (sscanf(line.c_str(), "%f %f", &target_deg_1, &target_deg_2) == 2) {
+      ref_1 = (target_deg_1); // 360.0) * counts_per_rotation;
+      ref_2 = (target_deg_2); // 360.0) * counts_per_rotation;
+
+      Serial.print("New targets set -> M1: ");
+      Serial.print(target_deg_1);
+      Serial.print("°,  M2: ");
+      Serial.print(target_deg_2);
+      Serial.println("°");
+    } else {
+      Serial.println("⚠️ Invalid input. Please enter: <angle1> <angle2>");
+  }
+}
+
+  // === 2. Read encoder positions atomically ===
+  ATOMIC() {
+    pos_1 = posi_1;
+    pos_2 = posi_2;
+  }
+
+  // === 3. Run PD Control every 2ms ===
+  if ((micros() - loop_prev) >= 2000) {
+    float loop_time = (micros() - loop_prev);
+    loop_prev = micros();
+
+    // Motor 1
+    e_1 = ref_1 - pos_1;
+    
+    if (e_1 <= 100 && e_1 >= -100) {
+      sum_e_1 += e_1 * loop_time / 1000000.0;
+    }
+    u_1 = k_p * e_1 + k_d * (e_1 - e_prev_1) * 1000000.0 / loop_time + k_i * sum_e_1;
+    u_1 = constrain(u_1, -255, 255);
+    u_sign_1 = (u_1 > 0) - (u_1 < 0);
+    u_amplitude_1 = abs(u_1);
+    e_prev_1 = e_1;
+
+    // Motor 2
+    e_2 = ref_2 - pos_2;
+
+    if (e_2 <= 100 && e_2 >= -100) {
+      sum_e_2 += e_2 * loop_time / 1000000.0;
+    }
+
+    u_2 = k_p * e_2 + k_d * (e_2 - e_prev_2) * 1000000.0 / loop_time + k_i * sum_e_2;
+    u_2 = constrain(u_2, -255, 255);
+    u_sign_2 = (u_2 > 0) - (u_2 < 0);
+    u_amplitude_2 = abs(u_2);
+    e_prev_2 = e_2;
+  }
+
+  // === 4. Drive motors ===
+  setMotor(u_sign_1, u_amplitude_1, PWM_pin_1, IN1_1, IN2_1);
+  setMotor(u_sign_2, u_amplitude_2, PWM_pin_2, IN1_2, IN2_2);
+}
+
+void setMotor(int dir, int pwmVal, int pwm_pin, int in1, int in2) {
+  analogWrite(pwm_pin, pwmVal);
+  if (dir == 1) {
+    digitalWrite(in1, HIGH);
+    digitalWrite(in2, LOW);
+  } else if (dir == -1) {
+    digitalWrite(in1, LOW);
+    digitalWrite(in2, HIGH);
+  } else {
+    digitalWrite(in1, LOW);
+    digitalWrite(in2, LOW);
+  }
+}
+
+void readEncoder_1() {
+  int b = digitalRead(ENCB_1);
+  if (b > 0) posi_1++;
+  else posi_1--;
+}
+
+void readEncoder_2() {
+  int b = digitalRead(ENCB_2);
+  if (b > 0) posi_2++;
+  else posi_2--;
+}

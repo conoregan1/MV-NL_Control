@@ -1,0 +1,165 @@
+import math
+import matplotlib.pyplot as plt
+
+# --- 1. CONFIGURE YOUR ROBOT (for plotting reach) ---
+L1 = 145.0  # Length of arm 1 (e.g., in mm)
+L2 = 100.0  # Length of arm 2 (e.g., in mm)
+
+# --- 2. CONFIGURE SHAPE DETAIL ---
+# (Steps for the test plot. Does not need to match the main script)
+STEPS_PER_SHAPE = 300 # Total steps for circle
+STEPS_PER_SIDE = 100  # Steps per side for square/triangle
+CLUSTER_STEPS = 10    # Cluster steps for square/triangle
+
+# --- 3. PATH GENERATOR FUNCTIONS ---
+# (Copied from your script, no changes)
+
+def generate_line(x_start, y_start, x_end, y_end, steps):
+    points = []
+    if steps <= 0:
+        return [(x_start, y_start)]
+    for i in range(steps + 1):
+        fraction = i / steps if steps > 0 else 0.0
+        x = x_start + (x_end - x_start) * fraction
+        y = y_start + (y_end - y_start) * fraction
+        points.append((x, y))
+    return points
+
+def generate_eased_line(x_start, y_start, x_end, y_end, steps, cluster_steps):
+    points = []
+    (x_s, y_s) = (x_start, y_start)
+    (x_e, y_e) = (x_end, y_end)
+    if steps <= 0:
+        return [(x_s, y_s)]
+    linear_steps = steps - (2 * cluster_steps)
+    if linear_steps < 0:
+        cluster_steps = steps // 2
+        linear_steps = steps - (2 * cluster_steps)
+    t_values = [0.0]
+    for i in range(cluster_steps, 0, -1):
+        t_values.append(0.5 ** i)
+    t_start = 0.5 ** cluster_steps if cluster_steps > 0 else 0.0
+    t_end = 1.0 - (0.5 ** cluster_steps) if cluster_steps > 0 else 1.0
+    linear_segment_count = max(1, linear_steps)
+    for i in range(1, linear_steps):
+        fraction = i / linear_segment_count
+        t_values.append(t_start + (t_end - t_start) * fraction)
+    for i in range(1, cluster_steps + 1):
+        t_values.append(1.0 - (0.5 ** i))
+    t_values.append(1.0)
+    for t in t_values:
+        x = x_s + (x_e - x_s) * t
+        y = y_s + (y_e - y_s) * t
+        points.append((x, y))
+    return points
+
+def generate_square(centre_x, centre_y, side_length, steps_per_side, cluster_steps):
+    half_side = side_length / 2.0
+    c1 = (centre_x + half_side, centre_y + half_side) # top-left
+    c2 = (centre_x - half_side, centre_y + half_side) # bottom-left
+    c3 = (centre_x - half_side, centre_y - half_side) # bottom-right
+    c4 = (centre_x + half_side, centre_y - half_side) # top-right
+    points = []
+    points.extend(generate_eased_line(c1[0], c1[1], c2[0], c2[1], steps_per_side, cluster_steps)[:-1])
+    points.extend(generate_eased_line(c2[0], c2[1], c3[0], c3[1], steps_per_side, cluster_steps)[:-1])
+    points.extend(generate_eased_line(c3[0], c3[1], c4[0], c4[1], steps_per_side, cluster_steps)[:-1])
+    points.extend(generate_eased_line(c4[0], c4[1], c1[0], c1[1], steps_per_side, cluster_steps))
+    return points
+
+def generate_circle(centre_x, centre_y, radius, steps):
+    points = []
+    for i in range(steps + 1):
+        angle_rad = (i / steps) * 2.0 * math.pi
+        x = centre_x + radius * math.cos(angle_rad)
+        y = centre_y + radius * math.sin(angle_rad)
+        points.append((x, y))
+    return points
+
+def generate_triangle(start_x, start_y, side_length, steps_per_side, cluster_steps):
+    height = side_length * (math.sqrt(3) / 2.0)
+    v3 = (start_x, start_y)
+    v1 = (start_x + side_length, start_y)
+    v2 = (start_x + side_length / 2.0, start_y + height)
+    points = []
+    points.extend(generate_eased_line(v1[0], v1[1], v2[0], v2[1], steps_per_side, cluster_steps)[:-1])
+    points.extend(generate_eased_line(v2[0], v2[1], v3[0], v3[1], steps_per_side, cluster_steps)[:-1])
+    points.extend(generate_eased_line(v3[0], v3[1], v1[0], v1[1], steps_per_side, cluster_steps))
+    return points
+
+# --- 4. NEW PLOTTING FUNCTION ---
+def plot_layout(shapes, arm_lengths=(L1, L2)):
+    """
+    Plots all shapes on one graph with distinct colours.
+    'shapes' is a list of tuples: [ (points_list, 'label', 'colour'), ... ]
+    """
+    print("Plotting shape layout...")
+    plt.figure(figsize=(10, 8))
+    
+    for points_list, label, colour in shapes:
+        x_vals = [p[0] for p in points_list]
+        y_vals = [p[1] for p in points_list]
+        plt.plot(x_vals, y_vals, c=colour, label=label, linewidth=2)
+        # Plot start point
+        plt.plot(x_vals[0], y_vals[0], 'o', c=colour, markersize=8, mfc='white')
+
+    # Plot robot reach
+    if arm_lengths:
+        l1, l2 = arm_lengths
+        max_reach = l1 + l2
+        min_reach = abs(l1 - l2)
+        circle_max = plt.Circle((0, 0), max_reach, color='gray', fill=False, linestyle='--', label=f'Max Reach ({max_reach}mm)')
+        circle_min = plt.Circle((0, 0), min_reach, color='gray', fill=False, linestyle=':', label=f'Min Reach ({min_reach}mm)')
+        plt.gca().add_artist(circle_max)
+        if min_reach > 0:
+            plt.gca().add_artist(circle_min)
+            
+    # Plot Home position
+    plt.plot(L1+L2, 0, 'x', c='black', markersize=10, mew=2, label='Home (245, 0)')
+
+    plt.title('Shape Layout Test')
+    plt.xlabel('X (mm)')
+    plt.ylabel('Y (mm)')
+    plt.legend()
+    plt.grid(True)
+    plt.axis('equal')
+    print("Showing plot. Close the plot window to exit.")
+    plt.show()
+
+# --- 5. MAIN EXECUTION ---
+if __name__ == "__main__":
+    
+    print("Generating shapes for layout test...")
+    
+    # --- *** EDIT COORDINATES HERE *** ---
+    
+    # 1. Triangle
+    tri_points = generate_triangle(
+        start_x=80, start_y=50, side_length=97, 
+        steps_per_side=STEPS_PER_SIDE,
+        cluster_steps=CLUSTER_STEPS
+    )
+    
+    # 2. Circle
+    circ_points = generate_circle(
+        centre_x=120, centre_y=0, radius=41, 
+        steps=STEPS_PER_SHAPE
+    )
+    
+    # 3. Square
+    sq_points = generate_square(
+        centre_x=120, centre_y=-100, side_length=83, 
+        steps_per_side=STEPS_PER_SIDE, 
+        cluster_steps=CLUSTER_STEPS
+    )
+
+    # --- *** END OF EDITABLE SECTION *** ---
+    
+    
+    # Plot all shapes together
+    shapes_to_plot = [
+        (tri_points, 'Triangle', 'blue'),
+        (circ_points, 'Circle', 'red'),
+        (sq_points, 'Square', 'green')
+    ]
+    
+    plot_layout(shapes_to_plot, arm_lengths=(L1, L2))

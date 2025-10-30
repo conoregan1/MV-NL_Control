@@ -12,18 +12,41 @@ L2 = 100.0  # Length of arm 2 (e.g., in mm)
 COUNTS_PER_ROTATION = 2100.0
 
 # --- NEW SETTINGS ---
-MOVE_TO_START_AT_BEGINNING = True # Set to True to move from home to start
-RETURN_TO_HOME_AT_END = True      # Set to True to add a "go home" path
-# (Number of points in the path)
-TOTAL_STEPS = 400  # More steps = smoother, but uses more memory
-STEPS_FOR_START_PATH = int(TOTAL_STEPS / 5 + 2)       # How many points for the move-to-start journey
-STEPS_FOR_HOME_PATH = int(TOTAL_STEPS / 10)       # How many points for the return journey
+MOVE_TO_START_AT_BEGINNING = True
+RETURN_TO_HOME_AT_END = True
+Time_For_Drawing = 2.5  # Total time (in seconds) for the *entire* motion
+Plotting_Freq = 0.002   # Time (in seconds) between points
 
+# --- CHOOSE YOUR SHAPE TO DRAW ---
+shape_to_plot = "T"  # "S" = Square, "C" = Circle, "T" = Triangle
+Plot = False            # Whether to plot the path
+square = False        # Set to False
+circle = False         # Set to False
+triangle = False      # Set to False
+if shape_to_plot == "S":
+    square = True
+elif shape_to_plot == "C":
+    circle = True
+elif shape_to_plot == "T":
+    triangle = True
+
+# --- This logic is clearer ---
+# We calculate total steps from the *total* time.
+TOTAL_STEPS = int(Time_For_Drawing / Plotting_Freq)
+
+# Allocate percentages of the total steps
+STEPS_FOR_START_PATH = int(TOTAL_STEPS * 0.25)  # 10% for start path
+STEPS_FOR_HOME_PATH = int(TOTAL_STEPS * 0.10)   # 10% for home path
+REMAINING_STEPS = TOTAL_STEPS - STEPS_FOR_START_PATH - STEPS_FOR_HOME_PATH # 80% for shape
+print(f"Total Steps: {TOTAL_STEPS}")
+print(f"  > Start Path: {STEPS_FOR_START_PATH}")
+print(f"  > Home Path:  {STEPS_FOR_HOME_PATH}")
+print(f"  > Shape Path: {REMAINING_STEPS}")
 # --- 2. CONFIGURE YOUR PATH ---
 
 
 # Number of points to use for clustering at each corner
-CLUSTER_STEPS_PER_CORNER = int(TOTAL_STEPS / 10)  # e.g., 20 points approaching, 20 leaving
+# CLUSTER_STEPS_PER_CORNER = int(TOTAL_STEPS / 6)  # e.g., 20 points approaching, 20 leaving
 
 # --- 3. CORE FUNCTIONS (Kinematics) ---
 # (Unchanged)
@@ -235,29 +258,47 @@ if __name__ == "__main__":
     # --- CHOOSE YOUR SHAPE ---
     
     # 1. Square
-    # print("Generating Square Path...")
-    # path_name = "path_square"
-    # steps_per_side_sq = TOTAL_STEPS // 4
-    # xy_points = generate_square(
-    #     centre_x=120, centre_y=0, side_length=83, 
-    #     steps_per_side=steps_per_side_sq, 
-    #     cluster_steps=min(CLUSTER_STEPS_PER_CORNER, steps_per_side_sq // 2)
-    # )
+    if square:
+        print("Generating Square Path...")
+        path_name = "path_square"
+        # --- 50/50 logic for square (4 sides, 8 clusters) ---
+        total_linear_steps = REMAINING_STEPS // 2
+        total_cluster_steps = REMAINING_STEPS - total_linear_steps
+        linear_steps_per_side = total_linear_steps // 4
+        cluster_steps_per_cluster = total_cluster_steps // 8
+        steps_per_side_sq = linear_steps_per_side + (2 * cluster_steps_per_cluster)
+        xy_points = generate_square(
+            centre_x=120, centre_y=0, side_length=83, 
+            steps_per_side=steps_per_side_sq, 
+            cluster_steps=cluster_steps_per_cluster
+        )
     
     # 2. Circle (Does not use easing)
-    # print("Generating Circle Path...")
-    # path_name = "path_circle"
-    # xy_points = generate_circle(centre_x=180, centre_y=0, radius=41, steps=TOTAL_STEPS)
+    if circle:
+        print("Generating Circle Path...")
+        path_name = "path_circle"
+        # Circle just uses all remaining steps
+        xy_points = generate_circle(centre_x=180, centre_y=0, radius=41, steps=REMAINING_STEPS)
 
     # 3. Equilateral Triangle
-    print("Generating Triangle Path...")
-    path_name = "path_triangle"
-    steps_per_side_tri = TOTAL_STEPS // 3
-    xy_points = generate_triangle(
-        start_x=100, start_y=50, side_length=97, 
-        steps_per_side=steps_per_side_tri,
-        cluster_steps=min(CLUSTER_STEPS_PER_CORNER, steps_per_side_tri // 2)
-    )
+    if triangle:
+        print("Generating Triangle Path...")
+        path_name = "path_triangle"
+        # --- CORRECTED 50/50 logic for triangle (3 sides, 6 clusters) ---
+        total_linear_steps = REMAINING_STEPS // 2
+        total_cluster_steps = REMAINING_STEPS - total_linear_steps
+        
+        linear_steps_per_side = total_linear_steps // 3
+        cluster_steps_per_cluster = total_cluster_steps // 6
+        
+        # This is the total number of steps to generate for one side
+        steps_per_side_tri = linear_steps_per_side + (2 * cluster_steps_per_cluster)
+        
+        xy_points = generate_triangle(
+            start_x=100, start_y=50, side_length=97, 
+            steps_per_side=steps_per_side_tri,
+            cluster_steps=cluster_steps_per_cluster # Pass the steps for *one* cluster
+        )
 
     
     # --- *** NEW: Add "Move to Start" path if enabled *** ---
@@ -295,11 +336,12 @@ if __name__ == "__main__":
 
     
     # --- Plot the generated path ---
-    if xy_points:
-        plot_path_with_colours(xy_points, arm_lengths=(L1, L2))
-    else:
-        print("No (x, y) points were generated. Exiting.")
-        exit()
+    if Plot:
+        if xy_points:
+            plot_path_with_colours(xy_points, arm_lengths=(L1, L2))
+        else:
+            print("No (x, y) points were generated. Exiting.")
+            exit()
 
     
     # --- Process the chosen path ---
@@ -333,7 +375,7 @@ if __name__ == "__main__":
         
 # === CONFIGURE SERIAL PORT ===
 try:
-    ser = serial.Serial('/dev/cu.usbmodem11401', 230400, timeout=1)
+    ser = serial.Serial('COM5', 230400, timeout=1)
     time.sleep(2)
 except serial.SerialException as e:
     print(f"\n--- ERROR: Could not open serial port ---")
@@ -352,7 +394,9 @@ try:
         ser.write(line.encode('utf-8'))
         print(line.strip())
         response = ser.readline().decode('utf-8').strip()
-        time.sleep(0.005)
+        if response:
+            print(f"  ^-- Pico response: {response}")
+        time.sleep(Plotting_Freq)
 except serial.SerialException as e:
     print(f"Serial error during streaming: {e}")
 finally:

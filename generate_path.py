@@ -13,17 +13,21 @@ MOVE_TO_START_AT_BEGINNING = True
 RETURN_TO_HOME_AT_END = True
 Time_For_Drawing = 2.5  # Total time (in seconds) for the *entire* motion
 Plotting_Freq = 0.002   # Time (in seconds) between points
+cluster_ratio = 0.5  # Ratio of cluster steps to total steps for shapes, lower value = more cluster points
+percentage_start = 25  # Percentage of total time for "move to start"
+percentage_home = 10   # Percentage of total time for "return to home"
 
 # --- CHOOSE YOUR SHAPE TO DRAW ---
 shape_to_plot = "C"  # "S" = Square, "C" = Circle, "T" = Triangle
 Plot = True          # Whether to plot the path (Set to True to verify layout)
 user = "Conor"
 #user = "Jamie"
+# user = "Hugo"
 
 # --- Step Calculation ---
 TOTAL_STEPS = int(Time_For_Drawing / Plotting_Freq)
-STEPS_FOR_START_PATH = int(TOTAL_STEPS * 0.25)
-STEPS_FOR_HOME_PATH = int(TOTAL_STEPS * 0.10)
+STEPS_FOR_START_PATH = int(TOTAL_STEPS * (percentage_start / 100.0))
+STEPS_FOR_HOME_PATH = int(TOTAL_STEPS * (percentage_home / 100.0))
 REMAINING_STEPS = TOTAL_STEPS - STEPS_FOR_START_PATH - STEPS_FOR_HOME_PATH
 print(f"Total Steps: {TOTAL_STEPS}")
 print(f"  > Start Path: {STEPS_FOR_START_PATH}")
@@ -185,7 +189,7 @@ if __name__ == "__main__":
     if shape_to_plot == "S":
         print("Generating Square Path...")
         path_name = "path_square"
-        total_linear_steps = REMAINING_STEPS // 2
+        total_linear_steps = REMAINING_STEPS // (1/cluster_ratio)
         total_cluster_steps = REMAINING_STEPS - total_linear_steps
         linear_steps_per_side = total_linear_steps // 4
         cluster_steps_per_cluster = total_cluster_steps // 8
@@ -207,7 +211,7 @@ if __name__ == "__main__":
     elif shape_to_plot == "T":
         print("Generating Triangle Path...")
         path_name = "path_triangle"
-        total_linear_steps = REMAINING_STEPS // 2
+        total_linear_steps = REMAINING_STEPS // (1/cluster_ratio)
         total_cluster_steps = REMAINING_STEPS - total_linear_steps
         linear_steps_per_side = total_linear_steps // 3
         cluster_steps_per_cluster = total_cluster_steps // 6
@@ -268,8 +272,10 @@ if __name__ == "__main__":
     try:
         if user == "Conor":
             ser = serial.Serial('COM5', 230400, timeout=1)
-        else:
+        elif user == "Jamie":
             ser = serial.Serial('Jamies USB port', 230400, timeout=1)
+        elif user == "Hugo":
+            ser = serial.Serial('Hugos USB port', 230400, timeout=1)
         time.sleep(2)
     except serial.SerialException as e:
         print(f"\n--- ERROR: Could not open serial port ---")

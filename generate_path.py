@@ -11,9 +11,9 @@ COUNTS_PER_ROTATION = 2100.0
 # --- NEW SETTINGS ---
 MOVE_TO_START_AT_BEGINNING = True
 RETURN_TO_HOME_AT_END = True
-Time_For_Drawing = 2.5  # Total time (in seconds) for the *entire* motion
-Plotting_Freq = 0.002   # Time (in seconds) between points
-cluster_ratio = 0.5  # Ratio of cluster steps to total steps for shapes, lower value = more cluster points
+Time_For_Drawing = 2.5   # Total time (in seconds) for the *entire* motion
+Plotting_Freq = 0.002    # Time (in seconds) between points
+cluster_ratio = 0.5   # Ratio of cluster steps to total steps for shapes, lower value = more cluster points
 percentage_start = 35   # Percentage of total time for "move to start"
 percentage_home = 10    # Percentage of total time for "return to home"
 
@@ -39,9 +39,9 @@ STEPS_FOR_START_PATH = int(TOTAL_STEPS * (percentage_start / 100.0))
 STEPS_FOR_HOME_PATH = int(TOTAL_STEPS * (percentage_home / 100.0))
 REMAINING_STEPS = TOTAL_STEPS - STEPS_FOR_START_PATH - STEPS_FOR_HOME_PATH
 print(f"Total Steps: {TOTAL_STEPS}")
-print(f"  > Start Path: {STEPS_FOR_START_PATH}")
-print(f"  > Home Path:  {STEPS_FOR_HOME_PATH}")
-print(f"  > Shape Path: {REMAINING_STEPS}")
+print(f"   > Start Path: {STEPS_FOR_START_PATH}")
+print(f"   > Home Path:  {STEPS_FOR_HOME_PATH}")
+print(f"   > Shape Path: {REMAINING_STEPS}")
 
 # --- 3. CORE FUNCTIONS (Kinematics) ---
 # (Unchanged)
@@ -304,13 +304,14 @@ if __name__ == "__main__":
     print(f"Streaming {len(motor1_counts)} points at {Plotting_Freq}s per point...")
 
     try:
-        for a1, a2 in zip(motor1_counts, motor2_counts):
+        # --- MODIFICATION: Added 'i' and 'enumerate' to count the points ---
+        for i, (a1, a2) in enumerate(zip(motor1_counts, motor2_counts)):
             line_out = f"{a1} {a2}\n"
             ser.write(line_out.encode('utf-8'))
             # Removed the 'Sent' print to reduce console spam
-            # print(f"Sent: {line_out.strip()}")
 
-            # Wait for the confirmation packet
+            # We STILL wait for the confirmation packet every time.
+            # This is critical for flow control.
             while True:
                 time_start = time.time()
                 try:
@@ -324,21 +325,31 @@ if __name__ == "__main__":
                     values = [float(x) for x in line_in.split()]
                     
                     if len(values) == 6:
-                        # Successfully received the 6-value packet
-                        ref_1_data.append(values[0])
-                        ref_2_data.append(values[1])
-                        e_1_data.append(values[2])
-                        e_2_data.append(values[3])
-                        uf_prev_1_data.append(values[4])
-                        uf_prev_2_data.append(values[5])
                         
-                        # Print the received line
-                        print(f"Received: {line_in}")
+                        # --- MODIFICATION: Only log data every 100th point ---
+                        # We 'read' every packet, but only 'store' 1 in 100.
+                        if i % 100 == 0:
+                            ref_1_data.append(values[0])
+                            ref_2_data.append(values[1])
+                            e_1_data.append(values[2])
+                            e_2_data.append(values[3])
+                            uf_prev_1_data.append(values[4])
+                            uf_prev_2_data.append(values[5])
+                            
+                            # Print only the received line that we logged
+                            print(f"Received (point {i}): {line_in}")
+                        # --- END OF MODIFICATION ---
+
+                        # This timing/sleep logic MUST run for every point
+                        # to maintain the 'Plotting_Freq' rate.
                         sleep_time = time.time() - time_start
                         if sleep_time < Plotting_Freq:
                             time.sleep(Plotting_Freq - sleep_time)
                         else:
+                            # Note: This warning might print more often now
+                            # if the 'if' check adds a tiny delay
                             print(f"Warning: Processing is slower than plotting frequency! and takes { sleep_time:.4f}s instead.")
+                        
                         break  # <-- This is the crucial exit
                     
                     else:
@@ -363,35 +374,36 @@ if __name__ == "__main__":
     print("\nPlotting received data...")
 
     if not ref_1_data:
-        print("No data was received from the Pico, cannot plot.")
+        print("No data was received (or logged) from the Pico, cannot plot.")
     else:
         # Create a time step array for the x-axis
+        # Note: The x-axis will now be 'Logged Points', not 'Time Steps'
         time_steps = range(len(ref_1_data))
 
         # Create a figure with 3 subplots, sharing the x-axis
         fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
-        fig.suptitle('Robot Arm Controller Performance', fontsize=16)
+        fig.suptitle('Robot Arm Controller Performance (Logged 1 in 100 points)', fontsize=16)
 
         # --- Plot 1: Reference Positions ---
-        ax1.plot(time_steps, ref_1_data, label='Motor 1 Reference', color='blue')
-        ax1.plot(time_steps, ref_2_data, label='Motor 2 Reference', color='red')
+        ax1.plot(time_steps, ref_1_data, '.-', label='Motor 1 Reference', color='blue')
+        ax1.plot(time_steps, ref_2_data, '.-', label='Motor 2 Reference', color='red')
         ax1.set_ylabel('Position (Counts)')
         ax1.set_title('Reference Positions (Target)')
         ax1.legend()
         ax1.grid(True)
 
         # --- Plot 2: Errors ---
-        ax2.plot(time_steps, e_1_data, label='Motor 1 Error', color='blue', linestyle='--')
-        ax2.plot(time_steps, e_2_data, label='Motor 2 Error', color='red', linestyle='--')
+        ax2.plot(time_steps, e_1_data, '.-', label='Motor 1 Error', color='blue', linestyle='--')
+        ax2.plot(time_steps, e_2_data, '.-', label='Motor 2 Error', color='red', linestyle='--')
         ax2.set_ylabel('Error (Counts)')
         ax2.set_title('Following Error (Target - Actual)')
         ax2.legend()
         ax2.grid(True)
         
         # --- Plot 3: Control Effort ---
-        ax3.plot(time_steps, uf_prev_1_data, label='Motor 1 Effort', color='blue')
-        ax3.plot(time_steps, uf_prev_2_data, label='Motor 2 Effort', color='red')
-        ax3.set_xlabel('Time Step')
+        ax3.plot(time_steps, uf_prev_1_data, '.-', label='Motor 1 Effort', color='blue')
+        ax3.plot(time_steps, uf_prev_2_data, '.-', label='Motor 2 Effort', color='red')
+        ax3.set_xlabel('Logged Point Index (1 per 100 steps)')
         ax3.set_ylabel('Control Signal')
         ax3.set_title('Control Effort (Output)')
         ax3.legend()

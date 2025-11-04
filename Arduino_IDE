@@ -20,7 +20,7 @@ float ref_1 = 0, ref_2 = 0;
 float e_1 = 0, e_2 = 0, e_prev_1 = 0, e_prev_2 = 0, sum_e_1 = 0, sum_e_2 = 0, uf_prev_1 = 0, uf_prev_2 = 0;
 int u_1 = 0, u_2 = 0, u_sign_1 = 0, u_sign_2 = 0;
 int u_amplitude_1 = 0, u_amplitude_2 = 0;
-float k_p = 15, k_d = 0.5, k_i = 10;
+float k_p = 8, k_d = 0.5, k_i = 10;
 
 int print_interval = 100;
 int interval_count = 0;
@@ -131,19 +131,11 @@ void loop() {
   if (interval_count >= print_interval) {
     interval_count = 0;
 
-    Serial.print(ref_1);
-    Serial.println(" ");
-    Serial.print(ref_2);
-    Serial.println(" ");
-    Serial.print(e_1);
-    Serial.println(" ");
-    Serial.print(e_2);
-    Serial.println(" ");
-    Serial.print(uf_1);
-    Serial.println(" ");
-    Serial.print(uf_2);
-    Serial.println('\n');
+    String output = String(ref_1) + " " + String(ref_2) + " " +
+                    String(e_1) + " " + String(e_2) + " " +
+                    String(uf_prev_1) + " " + String(uf_prev_2);
 
+    Serial.println(output);
   }
 
 }

@@ -29,8 +29,8 @@ ref_1_data = []
 ref_2_data = []
 e_1_data = []
 e_2_data = []
-uf_1_data = []
-uf_2_data = []
+uf_prev_1_data = []
+uf_prev_2_data = []
 
 # --- Step Calculation ---
 TOTAL_STEPS = int(Time_For_Drawing / Plotting_Freq)
@@ -187,16 +187,7 @@ def plot_path_with_colours(xy_points, arm_lengths=(L1, L2)):
     print("Showing plot. Close the plot window to continue...")
     plt.show()
 
-def read_data_block():
-    block = []
-    for _ in range(6):
-        line = ser.readline().decode('utf-8').strip()
-        if line:
-            try:
-                block
-            except ValueError:
-                pass
-        return block if len(block) == 6 else None
+
 # --- 6. MAIN EXECUTION ---
 if __name__ == "__main__":
     
@@ -308,33 +299,31 @@ if __name__ == "__main__":
     print(f"Streaming {len(motor1_counts)} points at {Plotting_Freq}s per point...")
 
 
-
-
     try:
-        for a1, a2 in zip(motor1_counts, motor2_counts):
-            line = f"{a1} {a2}\n"
-            ser.write(line.encode('utf-8'))
-            print(line.strip())
-            
-            # --- Your debugging readline ---
-            time.sleep(Plotting_Freq)
+        while True:
+            line = ser.readline().decode('utf-8').strip()
+            if not line:
+                continue  # skip empty lines
+    
             try:
-                while True:
-                    block = read_data_block()
-                    if block:
-                        ref_1, ref_2, e_1, e_2, uf_1, uf_2 = map(int, block)
-                        ref_1_data.append(ref_1)
-                        ref_2_data.append(ref_2)
-                        e_1_data.append(e_1)
-                        e_2_data.append(e_2)
-                        uf_1_data.append(uf_1)
-                        uf_2_data.append(uf_2)
-                        break
-            except KeyboardInterrupt:
-                print("Streaming interrupted by user.")
-                break
-    except serial.SerialException as e:
-        print(f"Serial error during streaming: {e}")
-    finally:
-        print("Done streaming.")
-        ser.close()
+                # Split by spaces and convert to floats
+                values = [float(x) for x in line.split()]
+                
+                if len(values) == 6:
+                    ref_1, ref_2, e_1, e_2, uf_prev_1, uf_prev_2 = values
+                    ref_1_data.append(ref_1)
+                    ref_2_data.append(ref_2)
+                    e_1_data.append(e_1)
+                    e_2_data.append(e_2)
+                    uf_prev_1_data.append(uf_prev_1)
+                    uf_prev_2_data.append(uf_prev_2)
+    
+                    print(f"Received: {values}")
+                else:
+                    print(f"Unexpected data format: {line}")
+    
+            except ValueError:
+                print(f"Non-numeric data: {line}")
+    
+    except KeyboardInterrupt:
+        print("\nData reading stopped by user.")

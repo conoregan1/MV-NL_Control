@@ -102,13 +102,17 @@ def generate_eased_line(x_start, y_start, x_end, y_end, steps, cluster_steps):
     t_start = 0.5 ** cluster_steps if cluster_steps > 0 else 0.0
     t_end = 1.0 - (0.5 ** cluster_steps) if cluster_steps > 0 else 1.0
     
-    linear_segment_count = max(1, linear_steps) # Avoid div by zero
+    linear_segment_count = max(1, linear_steps)
     for i in range(1, linear_steps):
         fraction = i / linear_segment_count
         t_values.append(t_start + (t_end - t_start) * fraction)
     for i in range(1, cluster_steps + 1):
         t_values.append(1.0 - (0.5 ** i))
     t_values.append(1.0)
+    
+    # FIX: Sort the t_values to ensure monotonic progression
+    t_values.sort()
+    
     for t in t_values:
         x = x_s + (x_e - x_s) * t
         y = y_s + (y_e - y_s) * t

@@ -17,13 +17,12 @@ volatile int posi_2 = 0;
 
 int pos_1 = 0, pos_2 = 0;
 float ref_1 = 0, ref_2 = 0;
-float e_1 = 0, e_2 = 0, e_prev_1 = 0, e_prev_2 = 0, sum_e_1 = 0, sum_e_2 = 0, uf_prev_1 = 0, uf_prev_2 = 0, d_filt_prev_1 = 0, d_filt_prev_2 = 0;
+float e_1 = 0, e_2 = 0, e_prev_1 = 0, e_prev_2 = 0, sum_e_1 = 0, sum_e_2 = 0, uf_prev_1 = 0, uf_prev_2 = 0;
 int u_1 = 0, u_2 = 0, u_sign_1 = 0, u_sign_2 = 0;
 int u_amplitude_1 = 0, u_amplitude_2 = 0;
 float k_p = 8.0, k_d = 0.5, k_i = 10;
 float counts_per_rotation = 2100.0; // counts per rotation
 float alpha_u = 0;
-float alpha_d = 0;
 
 unsigned long loop_prev;
 

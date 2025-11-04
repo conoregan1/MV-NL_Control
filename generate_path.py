@@ -11,14 +11,14 @@ COUNTS_PER_ROTATION = 2100.0
 # --- NEW SETTINGS ---
 MOVE_TO_START_AT_BEGINNING = True
 RETURN_TO_HOME_AT_END = True
-Time_For_Drawing = 3  # Total time (in seconds) for the *entire* motion
+Time_For_Drawing = 2.5  # Total time (in seconds) for the *entire* motion
 Plotting_Freq = 0.002   # Time (in seconds) between points
-cluster_ratio = 0.45  # Ratio of cluster steps to total steps for shapes, lower value = more cluster points
-percentage_start = 20  # Percentage of total time for "move to start"
-percentage_home = 10   # Percentage of total time for "return to home"
+cluster_ratio = 0.5  # Ratio of cluster steps to total steps for shapes, lower value = more cluster points
+percentage_start = 35   # Percentage of total time for "move to start"
+percentage_home = 10    # Percentage of total time for "return to home"
 
 # --- CHOOSE YOUR SHAPE TO DRAW ---
-shape_to_plot = "S"  # "S" = Square, "C" = Circle, "T" = Triangle
+shape_to_plot = "T"   # "S" = Square, "C" = Circle, "T" = Triangle
 Plot = False          # Whether to plot the path (Set to True to verify layout)
 user = "Conor"
 #user = "Jamie"
@@ -95,7 +95,7 @@ def generate_eased_line(x_start, y_start, x_end, y_end, steps, cluster_steps):
         print(f"WARNING: Reducing cluster_steps. {steps} total segments is not enough for {cluster_steps} cluster points per side.")
         cluster_steps = steps // 2
         linear_steps = steps - (2 * cluster_steps)
-        print(f"         Set cluster_steps = {cluster_steps}, linear_steps = {linear_steps}")
+        print(f"        Set cluster_steps = {cluster_steps}, linear_steps = {linear_steps}")
     t_values = [0.0]
     for i in range(cluster_steps, 0, -1):
         t_values.append(0.5 ** i)
@@ -294,36 +294,98 @@ if __name__ == "__main__":
         exit()
 
 
-    # === Send the path (--- RE-ADDED READLINE ---) ===
+    # === Send the path (FIXED robust loop) ===
     print("\nStreaming path to Pico...")
     print(f"Streaming {len(motor1_counts)} points at {Plotting_Freq}s per point...")
 
-
     try:
-        while True:
-            line = ser.readline().decode('utf-8').strip()
-            if not line:
-                continue  # skip empty lines
-    
-            try:
-                # Split by spaces and convert to floats
-                values = [float(x) for x in line.split()]
+        for a1, a2 in zip(motor1_counts, motor2_counts):
+            line_out = f"{a1} {a2}\n"
+            ser.write(line_out.encode('utf-8'))
+            # Removed the 'Sent' print to reduce console spam
+            # print(f"Sent: {line_out.strip()}")
+
+            # Wait for the confirmation packet
+            while True:
+                try:
+                    line_in = ser.readline().decode('utf-8').strip()
+                    
+                    if not line_in:
+                        # This just means the 1-second timeout hit
+                        continue 
+
+                    # Try to parse the line
+                    values = [float(x) for x in line_in.split()]
+                    
+                    if len(values) == 6:
+                        # Successfully received the 6-value packet
+                        ref_1_data.append(values[0])
+                        ref_2_data.append(values[1])
+                        e_1_data.append(values[2])
+                        e_2_data.append(values[3])
+                        uf_prev_1_data.append(values[4])
+                        uf_prev_2_data.append(values[5])
+                        
+                        # Print the received line
+                        print(f"Received: {line_in}")
+                        break  # <-- This is the crucial exit
+                    
+                    else:
+                        # Received something, but not the right format
+                        print(f"Unexpected data format: {line_in}")
+
+                except ValueError:
+                    # Failed to convert data to float (e.g., "Pico ready")
+                    print(f"Received non-numeric data: {line_in}")
                 
-                if len(values) == 6:
-                    ref_1, ref_2, e_1, e_2, uf_prev_1, uf_prev_2 = values
-                    ref_1_data.append(ref_1)
-                    ref_2_data.append(ref_2)
-                    e_1_data.append(e_1)
-                    e_2_data.append(e_2)
-                    uf_prev_1_data.append(uf_prev_1)
-                    uf_prev_2_data.append(uf_prev_2)
+                # Note: A SerialException will be caught by the outer 'try' block
+
+    except serial.SerialException as e:
+        print(f"\n--- ERROR: Serial communication error ---")
+        print(f"Details: {e}")
+    finally:
+        ser.close()
+        print("Serial port closed.")
+
     
-                    print(f"Received: {values}")
-                else:
-                    print(f"Unexpected data format: {line}")
-    
-            except ValueError:
-                print(f"Non-numeric data: {line}")
-    
-    except KeyboardInterrupt:
-        print("\nData reading stopped by user.")
+    # === NEW: PLOT THE RECEIVED DATA ===
+    print("\nPlotting received data...")
+
+    if not ref_1_data:
+        print("No data was received from the Pico, cannot plot.")
+    else:
+        # Create a time step array for the x-axis
+        time_steps = range(len(ref_1_data))
+
+        # Create a figure with 3 subplots, sharing the x-axis
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
+        fig.suptitle('Robot Arm Controller Performance', fontsize=16)
+
+        # --- Plot 1: Reference Positions ---
+        ax1.plot(time_steps, ref_1_data, label='Motor 1 Reference', color='blue')
+        ax1.plot(time_steps, ref_2_data, label='Motor 2 Reference', color='red')
+        ax1.set_ylabel('Position (Counts)')
+        ax1.set_title('Reference Positions (Target)')
+        ax1.legend()
+        ax1.grid(True)
+
+        # --- Plot 2: Errors ---
+        ax2.plot(time_steps, e_1_data, label='Motor 1 Error', color='blue', linestyle='--')
+        ax2.plot(time_steps, e_2_data, label='Motor 2 Error', color='red', linestyle='--')
+        ax2.set_ylabel('Error (Counts)')
+        ax2.set_title('Following Error (Target - Actual)')
+        ax2.legend()
+        ax2.grid(True)
+        
+        # --- Plot 3: Control Effort ---
+        ax3.plot(time_steps, uf_prev_1_data, label='Motor 1 Effort', color='blue')
+        ax3.plot(time_steps, uf_prev_2_data, label='Motor 2 Effort', color='red')
+        ax3.set_xlabel('Time Step')
+        ax3.set_ylabel('Control Signal')
+        ax3.set_title('Control Effort (Output)')
+        ax3.legend()
+        ax3.grid(True)
+
+        # Show the plot
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust for suptitle
+        plt.show()

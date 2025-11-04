@@ -4,25 +4,33 @@ import time
 import matplotlib.pyplot as plt
 
 # --- 1. CONFIGURE YOUR ROBOT ---
-L1 = 145.0  # Length of arm 1 (e.g., in mm)
+L1 = 100.0  # Length of arm 1 (e.g., in mm)
 L2 = 100.0  # Length of arm 2 (e.g., in mm)
 COUNTS_PER_ROTATION = 2100.0
 
 # --- NEW SETTINGS ---
 MOVE_TO_START_AT_BEGINNING = True
 RETURN_TO_HOME_AT_END = True
-Time_For_Drawing = 2.5  # Total time (in seconds) for the *entire* motion
+Time_For_Drawing = 3  # Total time (in seconds) for the *entire* motion
 Plotting_Freq = 0.002   # Time (in seconds) between points
-cluster_ratio = 0.5  # Ratio of cluster steps to total steps for shapes, lower value = more cluster points
-percentage_start = 25  # Percentage of total time for "move to start"
+cluster_ratio = 0.45  # Ratio of cluster steps to total steps for shapes, lower value = more cluster points
+percentage_start = 20  # Percentage of total time for "move to start"
 percentage_home = 10   # Percentage of total time for "return to home"
 
 # --- CHOOSE YOUR SHAPE TO DRAW ---
-shape_to_plot = "C"  # "S" = Square, "C" = Circle, "T" = Triangle
-Plot = True          # Whether to plot the path (Set to True to verify layout)
+shape_to_plot = "S"  # "S" = Square, "C" = Circle, "T" = Triangle
+Plot = False          # Whether to plot the path (Set to True to verify layout)
 user = "Conor"
 #user = "Jamie"
 # user = "Hugo"
+
+#arrays for data storing
+ref_1_data = []
+ref_2_data = []
+e_1_data = []
+e_2_data = []
+uf_1_data = []
+uf_2_data = []
 
 # --- Step Calculation ---
 TOTAL_STEPS = int(Time_For_Drawing / Plotting_Freq)
@@ -179,6 +187,16 @@ def plot_path_with_colours(xy_points, arm_lengths=(L1, L2)):
     print("Showing plot. Close the plot window to continue...")
     plt.show()
 
+def read_data_block():
+    block = []
+    for _ in range(6):
+        line = ser.readline().decode('utf-8').strip()
+        if line:
+            try:
+                block
+            except ValueError:
+                pass
+        return block if len(block) == 6 else None
 # --- 6. MAIN EXECUTION ---
 if __name__ == "__main__":
     
@@ -189,13 +207,13 @@ if __name__ == "__main__":
     if shape_to_plot == "S":
         print("Generating Square Path...")
         path_name = "path_square"
-        total_linear_steps = REMAINING_STEPS // (1/cluster_ratio)
+        total_linear_steps = int(REMAINING_STEPS // (1/cluster_ratio))
         total_cluster_steps = REMAINING_STEPS - total_linear_steps
         linear_steps_per_side = total_linear_steps // 4
         cluster_steps_per_cluster = total_cluster_steps // 8
         steps_per_side_sq = linear_steps_per_side + (2 * cluster_steps_per_cluster)
         xy_points = generate_square(
-            centre_x=120, centre_y=-100, side_length=83, 
+            centre_x=120, centre_y=-41, side_length=83, 
             steps_per_side=steps_per_side_sq, 
             cluster_steps=cluster_steps_per_cluster
         )
@@ -211,13 +229,13 @@ if __name__ == "__main__":
     elif shape_to_plot == "T":
         print("Generating Triangle Path...")
         path_name = "path_triangle"
-        total_linear_steps = REMAINING_STEPS // (1/cluster_ratio)
+        total_linear_steps = int(REMAINING_STEPS // (1/cluster_ratio))
         total_cluster_steps = REMAINING_STEPS - total_linear_steps
         linear_steps_per_side = total_linear_steps // 3
         cluster_steps_per_cluster = total_cluster_steps // 6
         steps_per_side_tri = linear_steps_per_side + (2 * cluster_steps_per_cluster)
         xy_points = generate_triangle(
-            start_x=80, start_y=50, side_length=97, 
+            start_x=65, start_y=0, side_length=97, 
             steps_per_side=steps_per_side_tri,
             cluster_steps=cluster_steps_per_cluster
         )
@@ -289,6 +307,9 @@ if __name__ == "__main__":
     print("\nStreaming path to Pico...")
     print(f"Streaming {len(motor1_counts)} points at {Plotting_Freq}s per point...")
 
+
+
+
     try:
         for a1, a2 in zip(motor1_counts, motor2_counts):
             line = f"{a1} {a2}\n"
@@ -296,12 +317,22 @@ if __name__ == "__main__":
             print(line.strip())
             
             # --- Your debugging readline ---
-            response = ser.readline().decode('utf-8').strip()
-            if response:
-                print(f"  ^-- Pico response: {response}")
-                
             time.sleep(Plotting_Freq)
-            
+            try:
+                while True:
+                    block = read_data_block()
+                    if block:
+                        ref_1, ref_2, e_1, e_2, uf_1, uf_2 = map(int, block)
+                        ref_1_data.append(ref_1)
+                        ref_2_data.append(ref_2)
+                        e_1_data.append(e_1)
+                        e_2_data.append(e_2)
+                        uf_1_data.append(uf_1)
+                        uf_2_data.append(uf_2)
+                        break
+            except KeyboardInterrupt:
+                print("Streaming interrupted by user.")
+                break
     except serial.SerialException as e:
         print(f"Serial error during streaming: {e}")
     finally:

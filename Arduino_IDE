@@ -20,9 +20,12 @@ float ref_1 = 0, ref_2 = 0;
 float e_1 = 0, e_2 = 0, e_prev_1 = 0, e_prev_2 = 0, sum_e_1 = 0, sum_e_2 = 0, uf_prev_1 = 0, uf_prev_2 = 0;
 int u_1 = 0, u_2 = 0, u_sign_1 = 0, u_sign_2 = 0;
 int u_amplitude_1 = 0, u_amplitude_2 = 0;
-float k_p = 8.0, k_d = 0.5, k_i = 10;
+float k_p = 15, k_d = 0.5, k_i = 10;
+
+int print_interval = 100;
+int interval_count = 0;
 float counts_per_rotation = 2100.0; // counts per rotation
-float alpha_u = 0;
+float alpha_u = 0.2;
 
 unsigned long loop_prev;
 
@@ -59,11 +62,6 @@ void loop() {
       ref_1 = (target_deg_1); // 360.0) * counts_per_rotation;
       ref_2 = (target_deg_2); // 360.0) * counts_per_rotation;
 
-      Serial.print("New targets set -> M1: ");
-      Serial.print(target_deg_1);
-      Serial.print("°,  M2: ");
-      Serial.print(target_deg_2);
-      Serial.println("°");
     } else {
       Serial.println("⚠️ Invalid input. Please enter: <angle1> <angle2>");
   }
@@ -127,6 +125,27 @@ void loop() {
   // === 4. Drive motors ===
   setMotor(u_sign_1, u_amplitude_1, PWM_pin_1, IN1_1, IN2_1);
   setMotor(u_sign_2, u_amplitude_2, PWM_pin_2, IN1_2, IN2_2);
+
+  // --- Serial Output for Debug ---
+  interval_count++;
+  if (interval_count >= print_interval) {
+    interval_count = 0;
+
+    Serial.print(ref_1);
+    Serial.println(" ");
+    Serial.print(ref_2);
+    Serial.println(" ");
+    Serial.print(e_1);
+    Serial.println(" ");
+    Serial.print(e_2);
+    Serial.println(" ");
+    Serial.print(uf_1);
+    Serial.println(" ");
+    Serial.print(uf_2);
+    Serial.println('\n');
+
+  }
+
 }
 
 void setMotor(int dir, int pwmVal, int pwm_pin, int in1, int in2) {

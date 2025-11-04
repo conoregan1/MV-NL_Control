@@ -19,7 +19,8 @@ percentage_home = 10    # Percentage of total time for "return to home"
 
 # --- CHOOSE YOUR SHAPE TO DRAW ---
 shape_to_plot = "T"   # "S" = Square, "C" = Circle, "T" = Triangle
-Plot = False          # Whether to plot the path (Set to True to verify layout)
+Plot_shape = False    
+Plot_perf = False      # Whether to plot the path (Set to True to verify layout)
 user = "Conor"
 #user = "Jamie"
 # user = "Hugo"
@@ -255,7 +256,7 @@ if __name__ == "__main__":
         xy_points.extend(return_path_points)
     
     # --- Plot the generated path ---
-    if Plot:
+    if Plot_shape:
         if xy_points:
             plot_path_with_colours(xy_points, arm_lengths=(L1, L2))
         else:
@@ -397,5 +398,6 @@ if __name__ == "__main__":
         ax3.grid(True)
 
         # Show the plot
-        plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust for suptitle
-        plt.show()
+        if Plot_perf:
+            plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust for suptitle
+            plt.show()

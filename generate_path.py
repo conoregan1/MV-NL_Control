@@ -311,6 +311,7 @@ if __name__ == "__main__":
 
             # Wait for the confirmation packet
             while True:
+                time_start = time.time()
                 try:
                     line_in = ser.readline().decode('utf-8').strip()
                     
@@ -332,6 +333,11 @@ if __name__ == "__main__":
                         
                         # Print the received line
                         print(f"Received: {line_in}")
+                        sleep_time = time.time() - time_start
+                        if sleep_time < Plotting_Freq:
+                            time.sleep(Plotting_Freq - sleep_time)
+                        else:
+                            print(f"Warning: Processing is slower than plotting frequency! and takes { sleep_time:.4f}s instead.")
                         break  # <-- This is the crucial exit
                     
                     else:

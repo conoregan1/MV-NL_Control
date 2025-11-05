@@ -1,7 +1,8 @@
 #include <SimplyAtomic.h>
 
 #define MAX_POINTS 5000
-#define CONTROL_INTERVAL_US 2000        // 5 ms control step
+#define CONTROL_INTERVAL_US 2000        // 2 ms control step
+#define REF_INTERVAL_US 5000            // 5 ms new reference position
 #define LOG_INTERVAL 10                 // log every Nth control step
 #define MAX_LOGS 1000                   // how many log samples to keep
 
@@ -32,7 +33,7 @@ float u_1 = 0, u_2 = 0;
 int u_amplitude_1 = 0, u_amplitude_2 = 0, u_sign_1 = 0, u_sign_2 = 0;
 float ref_1 = 0, ref_2 = 0;
 float uf_prev_1 = 0, uf_prev_2 = 0;
-float alpha_u = 0.2;
+float alpha_u = 0.1;
 
 unsigned long loop_prev = 0;
 
@@ -88,7 +89,7 @@ void loop() {
   // --- Step 2: Run control loop at fixed 5 ms ---
   unsigned long now = micros();
   if (now - loop_prev >= CONTROL_INTERVAL_US) {
-    loop_prev = now;
+    loop_prev += CONTROL_INTERVAL_US;
 
     ATOMIC() {
       pos_1 = posi_1;
@@ -97,7 +98,7 @@ void loop() {
 
     // --- Update reference only every REF_INTERVAL loops ---
     static unsigned long ref_timer = 0;
-    const unsigned long REF_INTERVAL_US = 5000;  // 50 ms between new points
+    const unsigned long REF_INTERVAL_US = 5000;  // 5 ms between new points
     if (now - ref_timer >= REF_INTERVAL_US && current_index < total_points) {
       ref_timer = now;
       ref_1 = target_1[current_index];
@@ -148,8 +149,13 @@ void loop() {
 
     // --- End condition ---
     if (current_index >= total_points && abs(e_1) < 5 && abs(e_2) < 5) {
-      setMotor(0, 0, PWM_pin_1, IN1_1, IN2_1);
-      setMotor(0, 0, PWM_pin_2, IN1_2, IN2_2);
+      
+      if (e_1 = 0){
+        setMotor(0, 0, PWM_pin_1, IN1_1, IN2_1);
+      }
+      if (e_2 = 0){
+        setMotor(0, 0, PWM_pin_2, IN1_2, IN2_2);
+      }
       dumpLogs();
       resetLog();
       path_loaded = false;

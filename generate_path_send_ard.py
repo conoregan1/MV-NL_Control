@@ -16,16 +16,16 @@ MOVE_TO_START_AT_BEGINNING = True
 RETURN_TO_HOME_AT_END = True
 Time_For_Drawing = 2.5   # Total time (in seconds) for the *entire* motion
 Plotting_Freq = 0.002    # Time (in seconds) between points
-cluster_ratio = 0.5   # Ratio of cluster steps to total steps for shapes, lower value = more cluster points
-percentage_start = 35   # Percentage of total time for "move to start"
-percentage_home = 10    # Percentage of total time for "return to home"
+cluster_ratio = 0.4   # Ratio of cluster steps to total steps for shapes, lower value = more cluster points
+percentage_start = 15   # Percentage of total time for "move to start"
+percentage_home = 15    # Percentage of total time for "return to home"
 
 # --- CHOOSE YOUR SHAPE TO DRAW ---
-shape_to_plot = "T"   # "S" = Square, "C" = Circle, "T" = Triangle
-Plot_shape = False    
-Plot_perf = False      # Whether to plot the path (Set to True to verify layout)
-user = "Conor"
-#user = "Jamie"
+shape_to_plot = "S"   # "S" = Square, "C" = Circle, "T" = Triangle
+Plot_shape = True    
+Plot_perf = True      # Whether to plot the path (Set to True to verify layout)
+# user = "Conor"
+user = "Jamie"
 # user = "Hugo"
 
 #arrays for data storing
@@ -194,6 +194,8 @@ def plot_path_with_colours(xy_points, arm_lengths=(L1, L2)):
     plt.axis('equal')
     print("Showing plot. Close the plot window to continue...")
     plt.show()
+    
+
 
 
 # --- 6. MAIN EXECUTION ---
@@ -285,92 +287,71 @@ if __name__ == "__main__":
             motor2_counts.append(-count2) # Keeping your inversion
         
         
-    # === CONFIGURE SERIAL PORT ===
-    try:
-        if user == "Conor":
-            ser = serial.Serial('COM5', 230400, timeout=1)
-        elif user == "Jamie":
-            ser = serial.Serial('Jamies USB port', 230400, timeout=1)
-        elif user == "Hugo":
-            ser = serial.Serial('Hugos USB port', 230400, timeout=1)
-        time.sleep(2)
-    except serial.SerialException as e:
-        print(f"\n--- ERROR: Could not open serial port ---")
-        print(f"Details: {e}")
-        print("Please check your port name and connection.")
-        print("Path data was generated and plotted, but not sent.")
-        exit()
+   # === CONFIGURE SERIAL PORT ===
+try:
+    if user == "Conor":
+        ser = serial.Serial('COM5', 230400, timeout=1)
+    elif user == "Jamie":
+        ser = serial.Serial('/dev/cu.usbmodem11401', 230400, timeout=1)
+    elif user == "Hugo":
+        ser = serial.Serial('Hugos USB port', 230400, timeout=1)
+    time.sleep(2)
+except serial.SerialException as e:
+    print(f"\n--- ERROR: Could not open serial port ---")
+    print(f"Details: {e}")
+    exit()
 
 
-    # === Send the path (FIXED robust loop) ===
-    print("\nStreaming path to Pico...")
-    print(f"Streaming {len(motor1_counts)} points at {Plotting_Freq}s per point...")
 
-    try:
-        # --- MODIFICATION: Added 'i' and 'enumerate' to count the points ---
-        for i, (a1, a2) in enumerate(zip(motor1_counts, motor2_counts)):
-            line_out = f"{a1} {a2}\n"
-            ser.write(line_out.encode('utf-8'))
-            # Removed the 'Sent' print to reduce console spam
+# === Send the full dataset ===
+num_points = len(motor1_counts)
+print(f"\nSending {num_points} total points to Pico...")
 
-            # We STILL wait for the confirmation packet every time.
-            # This is critical for flow control.
-            while True:
-                time_start = time.time()
-                try:
-                    line_in = ser.readline().decode('utf-8').strip()
-                    
-                    if not line_in:
-                        # This just means the 1-second timeout hit
-                        continue 
+# --- Send header ---
+ser.write(f"START {num_points}\n".encode('utf-8'))
+time.sleep(0.5)
 
-                    # Try to parse the line
-                    values = [float(x) for x in line_in.split()]
-                    
-                    if len(values) == 6:
-                        
-                        # --- MODIFICATION: Only log data every 100th point ---
-                        # We 'read' every packet, but only 'store' 1 in 100.
-                        if i % 100 == 0:
-                            ref_1_data.append(values[0])
-                            ref_2_data.append(values[1])
-                            e_1_data.append(values[2])
-                            e_2_data.append(values[3])
-                            uf_prev_1_data.append(values[4])
-                            uf_prev_2_data.append(values[5])
-                            
-                            # Print only the received line that we logged
-                            print(f"Received (point {i}): {line_in}")
-                        # --- END OF MODIFICATION ---
+# --- Send all positions ---
+for a1, a2 in zip(motor1_counts, motor2_counts):
+    ser.write(f"{a1} {a2}\n".encode('utf-8'))
 
-                        # This timing/sleep logic MUST run for every point
-                        # to maintain the 'Plotting_Freq' rate.
-                        sleep_time = time.time() - time_start
-                        if sleep_time < Plotting_Freq:
-                            time.sleep(Plotting_Freq - sleep_time)
-                        else:
-                            # Note: This warning might print more often now
-                            # if the 'if' check adds a tiny delay
-                            print(f"Warning: Processing is slower than plotting frequency! and takes { sleep_time:.4f}s instead.")
-                        
-                        break  # <-- This is the crucial exit
-                    
-                    else:
-                        # Received something, but not the right format
-                        print(f"Unexpected data format: {line_in}")
+ser.write(b"END\n")
+print("All data sent. Waiting for debug messages from Pico...\n")
 
-                except ValueError:
-                    # Failed to convert data to float (e.g., "Pico ready")
-                    print(f"Received non-numeric data: {line_in}")
-                
-                # Note: A SerialException will be caught by the outer 'try' block
+# --- Read back debug info indefinitely ---
+try:
+    end = False
+    while not end:
+        line_in = ser.readline().decode('utf-8').strip()
+        if line_in:
+            print(f"[Pico] {line_in}")
 
-    except serial.SerialException as e:
-        print(f"\n--- ERROR: Serial communication error ---")
-        print(f"Details: {e}")
-    finally:
-        ser.close()
-        print("Serial port closed.")
+            # Check for end log
+            if line_in == "--- END LOG ---":
+                end = True
+                break
+
+            # Parse the CSV-style data lines
+            # Example line: 10,55.00,52,110.00,107
+            try:
+                parts = line_in.split(',')
+                if len(parts) == 7:
+                    _, ref1, e1, ref2, e2, uf_1, uf_2 = map(float, parts)
+                    ref_1_data.append(ref1)
+                    ref_2_data.append(ref2)
+                    e_1_data.append(e1)
+                    e_2_data.append(e2)
+                    # If control effort is last value in line, you can split it further
+                    # Here I assume uf_prev_1_data = e1, uf_prev_2_data = e2 or adjust as needed
+                    uf_prev_1_data.append(uf_1)
+                    uf_prev_2_data.append(uf_2)
+            except ValueError:
+                print("Skipping line (cannot parse numbers)")
+except KeyboardInterrupt:
+    print("User interrupted, closing serial.")
+finally:
+    ser.close()
+
 
     
     # === NEW: PLOT THE RECEIVED DATA ===
@@ -394,6 +375,8 @@ if __name__ == "__main__":
         ax1.set_title('Reference Positions (Target)')
         ax1.legend()
         ax1.grid(True)
+        ref_1_data = []
+        ref_2_data = []
 
         # --- Plot 2: Errors ---
         ax2.plot(time_steps, e_1_data, '.-', label='Motor 1 Error', color='blue', linestyle='--')
@@ -402,6 +385,8 @@ if __name__ == "__main__":
         ax2.set_title('Following Error (Target - Actual)')
         ax2.legend()
         ax2.grid(True)
+        e_1_data = []
+        e_2_data = []
         
         # --- Plot 3: Control Effort ---
         ax3.plot(time_steps, uf_prev_1_data, '.-', label='Motor 1 Effort', color='blue')
@@ -411,6 +396,8 @@ if __name__ == "__main__":
         ax3.set_title('Control Effort (Output)')
         ax3.legend()
         ax3.grid(True)
+        uf_prev_1_data = []
+        uf_prev_2_data = []
 
         # Show the plot
         if Plot_perf:

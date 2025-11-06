@@ -2,7 +2,7 @@
 
 #define MAX_POINTS 5000
 #define CONTROL_INTERVAL_US 2000        // 2 ms control step
-#define REF_INTERVAL_US 5000            // 5 ms new reference position
+// #define REF_INTERVAL_US 5000            // 5 ms new reference position
 #define LOG_INTERVAL 10                 // log every Nth control step
 #define MAX_LOGS 1000                   // how many log samples to keep
 
@@ -150,10 +150,10 @@ void loop() {
     // --- End condition ---
     if (current_index >= total_points && abs(e_1) < 5 && abs(e_2) < 5) {
       
-      if (e_1 = 0){
+      if (e_1 == 0){
         setMotor(0, 0, PWM_pin_1, IN1_1, IN2_1);
       }
-      if (e_2 = 0){
+      if (e_2 == 0){
         setMotor(0, 0, PWM_pin_2, IN1_2, IN2_2);
       }
       dumpLogs();

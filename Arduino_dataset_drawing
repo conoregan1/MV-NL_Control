@@ -23,7 +23,7 @@
 volatile int posi_1 = 0, posi_2 = 0;
 
 // ----- PID tuning -----
-float k_p = 18, k_d = 0.5, k_i = 80;
+float k_p = 18, k_d = 0.5, k_i = 50;
 float counts_per_rotation = 2100.0;
 
 // ----- Working vars -----
@@ -33,7 +33,7 @@ float u_1 = 0, u_2 = 0;
 int u_amplitude_1 = 0, u_amplitude_2 = 0, u_sign_1 = 0, u_sign_2 = 0;
 float ref_1 = 0, ref_2 = 0;
 float uf_prev_1 = 0, uf_prev_2 = 0;
-float alpha_u = 0.1;
+float alpha_u = 0.2;
 
 unsigned long loop_prev = 0;
 
@@ -125,7 +125,7 @@ void loop() {
     // Motor 2
     e_2 = ref_2 - pos_2;
 
-    if  (e_2 <= 10 && e_2 >= -10){
+    if  (e_2 <= 25 && e_2 >= -25){
       sum_e_2 += e_2 * CONTROL_INTERVAL_US / 1e6;
     } else {
       sum_e_2 = 0.0;
@@ -149,13 +149,14 @@ void loop() {
 
     // --- End condition ---
     if (current_index >= total_points && abs(e_1) < 5 && abs(e_2) < 5) {
-      
-      if (e_1 == 0){
-        setMotor(0, 0, PWM_pin_1, IN1_1, IN2_1);
-      }
-      if (e_2 == 0){
-        setMotor(0, 0, PWM_pin_2, IN1_2, IN2_2);
-      }
+      setMotor(0, 0, PWM_pin_1, IN1_1, IN2_1);
+      setMotor(0, 0, PWM_pin_2, IN1_2, IN2_2);
+//      if (e_1 == 0){
+//        setMotor(0, 0, PWM_pin_1, IN1_1, IN2_1);
+//      }
+//      if (e_2 == 0){
+//        setMotor(0, 0, PWM_pin_2, IN1_2, IN2_2);
+//      }
       dumpLogs();
       resetLog();
       path_loaded = false;

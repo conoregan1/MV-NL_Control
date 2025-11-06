@@ -1,10 +1,10 @@
 #include <SimplyAtomic.h>
 
 #define MAX_POINTS 5000
-#define CONTROL_INTERVAL_US 2000        // 2 ms control step
-// #define REF_INTERVAL_US 5000            // 5 ms new reference position
-#define LOG_INTERVAL 10                 // log every Nth control step
-#define MAX_LOGS 1000                   // how many log samples to keep
+#define CONTROL_INTERVAL_US 2000      // 2 ms control step
+// #define REF_INTERVAL_US 5000         // 5 ms new reference position
+#define LOG_INTERVAL 10               // log every Nth control step
+#define MAX_LOGS 1000                 // how many log samples to keep
 
 // ----- Motor pins -----
 #define ENCA_1 0
@@ -23,8 +23,17 @@
 volatile int posi_1 = 0, posi_2 = 0;
 
 // ----- PID tuning -----
-float k_p = 18, k_d = 0.5, k_i = 50;
+// --- EDIT: Created separate PID gains for each motor ---
+// float k_p = 8, k_d = 0.5, k_i = 50; // Original global gains
 float counts_per_rotation = 2100.0;
+
+// PID gains for Motor 1
+float k_p_1 = 18.0, k_d_1 = 0.5, k_i_1 = 0.0;
+
+// PID gains for Motor 2
+float k_p_2 = 18.0, k_d_2 = 0.5, k_i_2 = 0.0;
+// --- END EDIT ---
+
 
 // ----- Working vars -----
 int pos_1 = 0, pos_2 = 0;
@@ -33,7 +42,7 @@ float u_1 = 0, u_2 = 0;
 int u_amplitude_1 = 0, u_amplitude_2 = 0, u_sign_1 = 0, u_sign_2 = 0;
 float ref_1 = 0, ref_2 = 0;
 float uf_prev_1 = 0, uf_prev_2 = 0;
-float alpha_u = 0.2;
+float alpha_u = 0.9;
 
 unsigned long loop_prev = 0;
 
@@ -98,7 +107,7 @@ void loop() {
 
     // --- Update reference only every REF_INTERVAL loops ---
     static unsigned long ref_timer = 0;
-    const unsigned long REF_INTERVAL_US = 5000;  // 5 ms between new points
+    const unsigned long REF_INTERVAL_US = 2000;  // 5 ms between new points
     if (now - ref_timer >= REF_INTERVAL_US && current_index < total_points) {
       ref_timer = now;
       ref_1 = target_1[current_index];
@@ -111,12 +120,16 @@ void loop() {
     // Motor 1
     e_1 = ref_1 - pos_1;
 
-    if  (e_1 <= 10 && e_1 >= -10){
+    if  ((e_1 <= (255.0/k_p_1)) && (e_1 >= -(255.0/k_p_1))){
       sum_e_1 += e_1 * CONTROL_INTERVAL_US / 1e6;
     } else {
       sum_e_1 = 0.0;
     }
-    u_1 = k_p * e_1 + k_d * (e_1 - e_prev_1) * 1e6 / CONTROL_INTERVAL_US + k_i * sum_e_1;
+    
+    // --- EDIT: Using Motor 1's PID gains ---
+    u_1 = k_p_1 * e_1 + k_d_1 * (e_1 - e_prev_1) * 1e6 / CONTROL_INTERVAL_US + k_i_1 * sum_e_1;
+    // --- END EDIT ---
+    
     float uf_1 = alpha_u * uf_prev_1 + (1.0 - alpha_u) * u_1;
     e_prev_1 = e_1;
     uf_1 = constrain(uf_1, -255, 255);
@@ -125,13 +138,16 @@ void loop() {
     // Motor 2
     e_2 = ref_2 - pos_2;
 
-    if  (e_2 <= 25 && e_2 >= -25){
+    if  ((e_2 <= (255.0/k_p_2)) && (e_2 >= -(255.0/k_p_2))){
       sum_e_2 += e_2 * CONTROL_INTERVAL_US / 1e6;
     } else {
       sum_e_2 = 0.0;
     }
 
-    u_2 = k_p * e_2 + k_d * (e_2 - e_prev_2) * 1e6 / CONTROL_INTERVAL_US + k_i * sum_e_2;
+    // --- EDIT: Using Motor 2's PID gains ---
+    u_2 = k_p_2 * e_2 + k_d_2 * (e_2 - e_prev_2) * 1e6 / CONTROL_INTERVAL_US + k_i_2 * sum_e_2;
+    // --- END EDIT ---
+
     float uf_2 = alpha_u * uf_prev_2 + (1.0 - alpha_u) * u_2;
     e_prev_2 = e_2;
     uf_2 = constrain(uf_2, -255, 255);

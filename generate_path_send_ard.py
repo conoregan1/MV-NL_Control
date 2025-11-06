@@ -14,16 +14,16 @@ COUNTS_PER_ROTATION = 2100.0
 # --- NEW SETTINGS ---
 MOVE_TO_START_AT_BEGINNING = True
 RETURN_TO_HOME_AT_END = True
-TOTAL_STEPS = 1000    # Total steps for the entire motion
+TOTAL_STEPS = 2500    # Total steps for the entire motion
 Time_For_Drawing = 3   # Total time (in seconds) for the *entire* motion
 Plotting_Freq = 0.002    # Time (in seconds) between points
 cluster_ratio = 0.4   # Ratio of cluster steps to total steps for shapes, lower value = more cluster points
-percentage_start = 10   # Percentage of total time for "move to start"
-percentage_home = 10    # Percentage of total time for "return to home"
+percentage_start = 25   # Percentage of total time for "move to start"
+percentage_home = 15    # Percentage of total time for "return to home"
 
 # --- CHOOSE YOUR SHAPE TO DRAW ---
 shape_to_plot = "T"   # "S" = Square, "C" = Circle, "T" = Triangle
-Plot_shape = True    
+Plot_shape = False    
 Plot_perf = True      # Whether to plot the path (Set to True to verify layout)
 user = "Conor"
 #user = "Jamie"
@@ -205,7 +205,7 @@ if __name__ == "__main__":
     xy_points = []
     path_name = "path_unknown"
     
-    # --- CHOOSE YOUR SHAPE ---
+    # --- CHOOSE YOUR SHAPE (This part is unchanged) ---
     if shape_to_plot == "S":
         print("Generating Square Path...")
         path_name = "path_square"
@@ -243,25 +243,10 @@ if __name__ == "__main__":
         )
 
     
-    # --- Add "Move to Start" path ---
-    if MOVE_TO_START_AT_BEGINNING and xy_points:
-        print(f"Adding 'Move to Start' sequence ({STEPS_FOR_START_PATH} steps)...")
-        start_x, start_y = xy_points[0]
-        home_x = L1 + L2
-        home_y = 0.0
-        start_path_points = generate_line(home_x, home_y, start_x, start_y, STEPS_FOR_START_PATH)
-        xy_points = start_path_points[:-1] + xy_points
-        
-    # --- Add "Return to Home" path ---
-    if RETURN_TO_HOME_AT_END and xy_points:
-        print(f"Adding 'Return to Home' sequence ({STEPS_FOR_HOME_PATH} steps)...")
-        last_x, last_y = xy_points[-1]
-        home_x = L1 + L2
-        home_y = 0.0
-        return_path_points = generate_line(last_x, last_y, home_x, home_y, STEPS_FOR_HOME_PATH)[1:]
-        xy_points.extend(return_path_points)
+    # --- (REMOVED) "Move to Start" and "Return to Home" from xy_points ---
+    # We will do this in joint-space (counts) later.
     
-    # --- Plot the generated path ---
+    # --- Plot the generated SHAPE path ---
     if Plot_shape:
         if xy_points:
             plot_path_with_colours(xy_points, arm_lengths=(L1, L2))
@@ -269,12 +254,12 @@ if __name__ == "__main__":
             print("No (x, y) points were generated. Exiting.")
             exit()
     
-    # --- Process the chosen path ---
+    # --- Process the chosen SHAPE path ---
     if not xy_points:
         print(f"No shape selected or points generated. Set 'shape_to_plot' to 'S', 'C', or 'T'.")
         exit()
 
-    print("Calculating Inverse Kinematics...")
+    print("Calculating Inverse Kinematics for SHAPE...")
     motor1_counts = []
     motor2_counts = []
     
@@ -286,38 +271,98 @@ if __name__ == "__main__":
             count2 = radians_to_counts(theta2, COUNTS_PER_ROTATION)
             motor1_counts.append(count1)
             motor2_counts.append(-count2) # Keeping your inversion
+    
+    
+    # --- NEW: Generate "Move to Start" in JOINT SPACE ---
+    motor1_start_path = []
+    motor2_start_path = []
+    
+    if MOVE_TO_START_AT_BEGINNING and motor1_counts:
+        print(f"Adding 'Move to Start' sequence ({STEPS_FOR_START_PATH} steps)...")
         
+        # 1. Get Target counts (first point of the shape)
+        c1_start_shape = motor1_counts[0]
+        c2_start_shape = motor2_counts[0]
         
-   # === CONFIGURE SERIAL PORT ===
-try:
-    if user == "Conor":
-        ser = serial.Serial('COM5', 230400, timeout=1)
-    elif user == "Jamie":
-        ser = serial.Serial('/dev/cu.usbmodem11401', 230400, timeout=1)
-    elif user == "Hugo":
-        ser = serial.Serial('Hugos USB port', 230400, timeout=1)
-    time.sleep(2)
-except serial.SerialException as e:
-    print(f"\n--- ERROR: Could not open serial port ---")
-    print(f"Details: {e}")
-    exit()
+        # 2. Get Home counts
+        home_x = L1 + L2
+        home_y = 0.0
+        home_angles = calculate_ik(home_x, home_y, L1, L2)
+        c1_home = radians_to_counts(home_angles[0], COUNTS_PER_ROTATION)
+        c2_home = -radians_to_counts(home_angles[1], COUNTS_PER_ROTATION) # Keep inversion
+        
+        # 3. Linearly interpolate COUNTS (this is the key fix)
+        # We must use floats for interpolation, then round to int.
+        for i in range(STEPS_FOR_START_PATH): # Creates points 0 to STEPS-1
+            fraction = float(i) / STEPS_FOR_START_PATH
+            
+            c1 = c1_home + (c1_start_shape - c1_home) * fraction
+            c2 = c2_home + (c2_start_shape - c2_home) * fraction
+            
+            motor1_start_path.append(int(round(c1))) # Use round() for smoothness
+            motor2_start_path.append(int(round(c2)))
+
+    
+    # --- NEW: Generate "Return to Home" in JOINT SPACE ---
+    motor1_home_path = []
+    motor2_home_path = []
+    
+    if RETURN_TO_HOME_AT_END and motor1_counts:
+        print(f"Adding 'Return to Home' sequence ({STEPS_FOR_HOME_PATH} steps)...")
+        
+        # 1. Get Target counts (last point of the shape)
+        c1_end_shape = motor1_counts[-1]
+        c2_end_shape = motor2_counts[-1]
+
+        # 2. Get Home counts (calculated above)
+        # c1_home, c2_home
+        
+        # 3. Linearly interpolate COUNTS
+        for i in range(1, STEPS_FOR_HOME_PATH + 1): # Creates points 1 to STEPS
+            fraction = float(i) / STEPS_FOR_HOME_PATH
+            
+            c1 = c1_end_shape + (c1_home - c1_end_shape) * fraction
+            c2 = c2_end_shape + (c2_home - c2_end_shape) * fraction
+            
+            motor1_home_path.append(int(round(c1)))
+            motor2_home_path.append(int(round(c2)))
+            
+            
+    # --- NEW: Combine all paths ---
+    final_motor1_counts = motor1_start_path + motor1_counts + motor1_home_path
+    final_motor2_counts = motor2_start_path + motor2_counts + motor2_home_path
+            
+
+    # === CONFIGURE SERIAL PORT (Unchanged) ===
+    try:
+        if user == "Conor":
+            ser = serial.Serial('COM5', 230400, timeout=1)
+        elif user == "Jamie":
+            ser = serial.Serial('/dev/cu.usbmodem11401', 230400, timeout=1)
+        elif user == "Hugo":
+            ser = serial.Serial('Hugos USB port', 230400, timeout=1)
+        time.sleep(2)
+    except serial.SerialException as e:
+        print(f"\n--- ERROR: Could not open serial port ---")
+        print(f"Details: {e}")
+        exit()
 
 
+    # === Send the full dataset (MODIFIED) ===
+    num_points = len(final_motor1_counts) # Use the new final list
+    print(f"\nSending {num_points} total points to Pico...")
 
-# === Send the full dataset ===
-num_points = len(motor1_counts)
-print(f"\nSending {num_points} total points to Pico...")
+    # --- Send header ---
+    ser.write(f"START {num_points}\n".encode('utf-8'))
+    time.sleep(0.5)
 
-# --- Send header ---
-ser.write(f"START {num_points}\n".encode('utf-8'))
-time.sleep(0.5)
+    # --- Send all positions (MODIFIED) ---
+    for a1, a2 in zip(final_motor1_counts, final_motor2_counts): # Use the new final lists
+        ser.write(f"{a1} {a2}\n".encode('utf-8'))
 
-# --- Send all positions ---
-for a1, a2 in zip(motor1_counts, motor2_counts):
-    ser.write(f"{a1} {a2}\n".encode('utf-8'))
-
-ser.write(b"END\n")
-print("All data sent. Waiting for debug messages from Pico...\n")
+    ser.write(b"END\n")
+    print("All data sent. Waiting for debug messages from Pico...\n")
+    
 
 # --- Read back debug info indefinitely ---
 try:

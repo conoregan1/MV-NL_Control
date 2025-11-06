@@ -14,19 +14,20 @@ COUNTS_PER_ROTATION = 2100.0
 # --- NEW SETTINGS ---
 MOVE_TO_START_AT_BEGINNING = True
 RETURN_TO_HOME_AT_END = True
-Time_For_Drawing = 2.5   # Total time (in seconds) for the *entire* motion
+TOTAL_STEPS = 1000    # Total steps for the entire motion
+Time_For_Drawing = 3   # Total time (in seconds) for the *entire* motion
 Plotting_Freq = 0.002    # Time (in seconds) between points
 cluster_ratio = 0.4   # Ratio of cluster steps to total steps for shapes, lower value = more cluster points
-percentage_start = 15   # Percentage of total time for "move to start"
-percentage_home = 15    # Percentage of total time for "return to home"
+percentage_start = 10   # Percentage of total time for "move to start"
+percentage_home = 10    # Percentage of total time for "return to home"
 
 # --- CHOOSE YOUR SHAPE TO DRAW ---
-shape_to_plot = "S"   # "S" = Square, "C" = Circle, "T" = Triangle
+shape_to_plot = "T"   # "S" = Square, "C" = Circle, "T" = Triangle
 Plot_shape = True    
 Plot_perf = True      # Whether to plot the path (Set to True to verify layout)
-# user = "Conor"
-user = "Jamie"
-# user = "Hugo"
+user = "Conor"
+#user = "Jamie"
+#user = "Hugo"
 
 #arrays for data storing
 ref_1_data = []
@@ -37,7 +38,7 @@ uf_prev_1_data = []
 uf_prev_2_data = []
 
 # --- Step Calculation ---
-TOTAL_STEPS = int(Time_For_Drawing / Plotting_Freq)
+#TOTAL_STEPS = int(Time_For_Drawing / Plotting_Freq)
 STEPS_FOR_START_PATH = int(TOTAL_STEPS * (percentage_start / 100.0))
 STEPS_FOR_HOME_PATH = int(TOTAL_STEPS * (percentage_home / 100.0))
 REMAINING_STEPS = TOTAL_STEPS - STEPS_FOR_START_PATH - STEPS_FOR_HOME_PATH

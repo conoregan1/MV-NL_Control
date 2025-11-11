@@ -7,27 +7,27 @@ import time
 import matplotlib.pyplot as plt
 
 # --- 1. CONFIGURE YOUR ROBOT ---
-L1 = 100.0  # Length of arm 1 (e.g., in mm)
-L2 = 100.0  # Length of arm 2 (e.g., in mm)
+L1 = 82.0  # Length of arm 1 (e.g., in mm)
+L2 = 75.0  # Length of arm 2 (e.g., in mm)
 COUNTS_PER_ROTATION = 2100.0
 
 # --- NEW SETTINGS ---
 MOVE_TO_START_AT_BEGINNING = True
 RETURN_TO_HOME_AT_END = True
-TOTAL_STEPS = 2500    # Total steps for the entire motion
+TOTAL_STEPS = 2000    # Total steps for the entire motion
 Time_For_Drawing = 3   # Total time (in seconds) for the *entire* motion
 Plotting_Freq = 0.002    # Time (in seconds) between points
 cluster_ratio = 0.4   # Ratio of cluster steps to total steps for shapes, lower value = more cluster points
-percentage_start = 25   # Percentage of total time for "move to start"
-percentage_home = 15    # Percentage of total time for "return to home"
+percentage_start = 5   # Percentage of total time for "move to start"
+percentage_home = 5    # Percentage of total time for "return to home"
 
 # --- CHOOSE YOUR SHAPE TO DRAW ---
-shape_to_plot = "T"   # "S" = Square, "C" = Circle, "T" = Triangle
-Plot_shape = False    
+shape_to_plot = "C"   # "S" = Square, "C" = Circle, "T" = Triangle
+Plot_shape = True    
 Plot_perf = True      # Whether to plot the path (Set to True to verify layout)
-user = "Conor"
+#user = "Conor"
 #user = "Jamie"
-#user = "Hugo"
+user = "Hugo"
 
 #arrays for data storing
 ref_1_data = []
@@ -36,6 +36,9 @@ e_1_data = []
 e_2_data = []
 uf_prev_1_data = []
 uf_prev_2_data = []
+u_p_2_data = []
+u_d_2_data = []
+u_i_2_data = []
 
 # --- Step Calculation ---
 #TOTAL_STEPS = int(Time_For_Drawing / Plotting_Freq)
@@ -215,7 +218,7 @@ if __name__ == "__main__":
         cluster_steps_per_cluster = total_cluster_steps // 8
         steps_per_side_sq = linear_steps_per_side + (2 * cluster_steps_per_cluster)
         xy_points = generate_square(
-            centre_x=120, centre_y=-41, side_length=83, 
+            centre_x=100, centre_y=0, side_length=83, 
             steps_per_side=steps_per_side_sq, 
             cluster_steps=cluster_steps_per_cluster
         )
@@ -224,7 +227,7 @@ if __name__ == "__main__":
         print("Generating Circle Path...")
         path_name = "path_circle"
         xy_points = generate_circle(
-            centre_x=120, centre_y=0, radius=41, 
+            centre_x=100, centre_y=0, radius=41, 
             steps=REMAINING_STEPS
         )
 
@@ -237,7 +240,7 @@ if __name__ == "__main__":
         cluster_steps_per_cluster = total_cluster_steps // 6
         steps_per_side_tri = linear_steps_per_side + (2 * cluster_steps_per_cluster)
         xy_points = generate_triangle(
-            start_x=65, start_y=0, side_length=97, 
+            start_x=50, start_y=-40, side_length=97, 
             steps_per_side=steps_per_side_tri,
             cluster_steps=cluster_steps_per_cluster
         )
@@ -289,7 +292,7 @@ if __name__ == "__main__":
         home_y = 0.0
         home_angles = calculate_ik(home_x, home_y, L1, L2)
         c1_home = radians_to_counts(home_angles[0], COUNTS_PER_ROTATION)
-        c2_home = -radians_to_counts(home_angles[1], COUNTS_PER_ROTATION) # Keep inversion
+        c2_home = radians_to_counts(home_angles[1], COUNTS_PER_ROTATION) # Keep inversion
         
         # 3. Linearly interpolate COUNTS (this is the key fix)
         # We must use floats for interpolation, then round to int.
@@ -340,7 +343,7 @@ if __name__ == "__main__":
         elif user == "Jamie":
             ser = serial.Serial('/dev/cu.usbmodem11401', 230400, timeout=1)
         elif user == "Hugo":
-            ser = serial.Serial('Hugos USB port', 230400, timeout=1)
+            ser = serial.Serial('/dev/cu.usbmodem1201', 230400, timeout=1)
         time.sleep(2)
     except serial.SerialException as e:
         print(f"\n--- ERROR: Could not open serial port ---")
@@ -381,8 +384,8 @@ try:
             # Example line: 10,55.00,52,110.00,107
             try:
                 parts = line_in.split(',')
-                if len(parts) == 7:
-                    _, ref1, e1, ref2, e2, uf_1, uf_2 = map(float, parts)
+                if len(parts) == 10:
+                    _, ref1, e1, ref2, e2, uf_1, uf_2, u_p_2, u_d_2, u_i_2 = map(float, parts)
                     ref_1_data.append(ref1)
                     ref_2_data.append(ref2)
                     e_1_data.append(e1)
@@ -391,6 +394,9 @@ try:
                     # Here I assume uf_prev_1_data = e1, uf_prev_2_data = e2 or adjust as needed
                     uf_prev_1_data.append(uf_1)
                     uf_prev_2_data.append(uf_2)
+                    u_p_2_data.append(u_p_2)
+                    u_d_2_data.append(u_d_2)
+                    u_i_2_data.append(u_i_2)
             except ValueError:
                 print("Skipping line (cannot parse numbers)")
 except KeyboardInterrupt:
@@ -411,7 +417,7 @@ finally:
         time_steps = range(len(ref_1_data))
 
         # Create a figure with 3 subplots, sharing the x-axis
-        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
+        fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(12, 10), sharex=True)
         fig.suptitle('Robot Arm Controller Performance (Logged 1 in 100 points)', fontsize=16)
 
         # --- Plot 1: Reference Positions ---
@@ -444,6 +450,18 @@ finally:
         ax3.grid(True)
         uf_prev_1_data = []
         uf_prev_2_data = []
+
+        ax4.plot(time_steps, u_p_2_data, '.-', label='Proportional', color='blue')
+        ax4.plot(time_steps, u_d_2_data, '.-', label='Derivative', color='red')
+        ax4.plot(time_steps, u_i_2_data, '.-', label='Integral', color='green')
+        ax4.set_xlabel('Logged Point Index (1 per 100 steps)')
+        ax4.set_ylabel('Control Signal')
+        ax4.set_title('Control Effort (Output)')
+        ax4.legend()
+        ax4.grid(True)
+        u_p_2_data = []
+        u_d_2_data = []
+        u_i_2_data = []
 
         # Show the plot
         if Plot_perf:

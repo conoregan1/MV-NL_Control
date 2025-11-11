@@ -113,8 +113,9 @@ void loop() {
       ref_timer = now;
       ref_1 = target_1[current_index];
       ref_2 = target_2[current_index];
-      if back_to_start == false:
+      if (back_to_start == false) {
         current_index++;
+      }
     }
 
     // --- PID Control ---
@@ -167,7 +168,7 @@ void loop() {
 
     // --- End condition ---
     if (current_index >= total_points && abs(e_1) < 5 && abs(e_2) < 5) {
-      back_to_start = true
+      back_to_start = true;
       current_index = 0;
 //      setMotor(0, 0, PWM_pin_1, IN1_1, IN2_1);
 //      setMotor(0, 0, PWM_pin_2, IN1_2, IN2_2);

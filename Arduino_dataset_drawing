@@ -3,8 +3,8 @@
 #define MAX_POINTS 5000
 #define CONTROL_INTERVAL_US 2000      // 2 ms control step
 // #define REF_INTERVAL_US 5000         // 5 ms new reference position
-#define LOG_INTERVAL 10               // log every Nth control step
-#define MAX_LOGS 4000                 // how many log samples to keep
+#define LOG_INTERVAL 15               // log every Nth control step
+#define MAX_LOGS 2500                 // how many log samples to keep
 
 // ----- Motor pins -----
 #define ENCA_1 0
@@ -28,10 +28,10 @@ volatile int posi_1 = 0, posi_2 = 0;
 float counts_per_rotation = 2100.0;
 
 // PID gains for Motor 1
-float k_p_1 = 18.0, k_d_1 = 0.8, k_i_1 = 10.0;
+float k_p_1 = 8.0, k_d_1 = 0.8, k_i_1 = 50.0;
 
 // PID gains for Motor 2
-float k_p_2 = 18.0, k_d_2 = 0.8, k_i_2 = 50.0;
+float k_p_2 = 8.0, k_d_2 = 0.8, k_i_2 = 50.0;
 // --- END EDIT ---
 
 
@@ -129,7 +129,7 @@ void loop() {
     // Motor 1
     e_1 = ref_1 - pos_1;
 
-    if  ((e_1 <= 25) && (e_1 >= -25)){
+    if  ((e_1 <= (255/k_p_1)) && (e_1 >= (-255/k_p_1))){
       sum_e_1 += e_1 * CONTROL_INTERVAL_US / 1e6;
     } else {
       sum_e_1 = 0.0;
@@ -147,7 +147,7 @@ void loop() {
     // Motor 2
     e_2 = ref_2 - pos_2;
 
-    if  ((e_2 <= 25) && (e_2 >= -25)){
+    if  ((e_2 <= (255/k_p_2)) && (e_2 >= (-255/k_p_2))){
       sum_e_2 += e_2 * CONTROL_INTERVAL_US / 1e6;
     } else {
       sum_e_2 = 0.0;
@@ -161,9 +161,10 @@ void loop() {
     // --- EDIT: Using Motor 2's PID gains ---
     u_2 = k_p_2 * e_2 + k_d_2 * (e_2 - e_prev_2) * 1e6 / CONTROL_INTERVAL_US + k_i_2 * sum_e_2;
     // --- END EDIT ---
-    
+
 
     float uf_2 = alpha_u * uf_prev_2 + (1.0 - alpha_u) * u_2;
+
     e_prev_2 = e_2;
     uf_2 = constrain(uf_2, -255, 255);
     uf_prev_2 = uf_2;
@@ -301,11 +302,11 @@ void dumpLogs() {
     Serial.print(',');
     Serial.print(logs[i].uf_prev_2);
     Serial.print(',');
-    Serial.print(logs[i].e_2);
+    Serial.print(logs[i].u_p_2);
     Serial.print(',');
-    Serial.print(logs[i].uf_prev_1);
+    Serial.print(logs[i].u_d_2);
     Serial.print(',');
-    Serial.println(logs[i].uf_prev_2);
+    Serial.println(logs[i].u_i_2);
   }
   Serial.println("--- END LOG ---");
 }

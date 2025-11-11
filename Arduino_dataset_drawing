@@ -4,7 +4,7 @@
 #define CONTROL_INTERVAL_US 2000      // 2 ms control step
 // #define REF_INTERVAL_US 5000         // 5 ms new reference position
 #define LOG_INTERVAL 10               // log every Nth control step
-#define MAX_LOGS 1000                 // how many log samples to keep
+#define MAX_LOGS 4000                 // how many log samples to keep
 
 // ----- Motor pins -----
 #define ENCA_1 0
@@ -28,10 +28,10 @@ volatile int posi_1 = 0, posi_2 = 0;
 float counts_per_rotation = 2100.0;
 
 // PID gains for Motor 1
-float k_p_1 = 18.0, k_d_1 = 0.5, k_i_1 = 0.0;
+float k_p_1 = 18.0, k_d_1 = 0.8, k_i_1 = 10.0;
 
 // PID gains for Motor 2
-float k_p_2 = 18.0, k_d_2 = 0.5, k_i_2 = 0.0;
+float k_p_2 = 18.0, k_d_2 = 0.8, k_i_2 = 50.0;
 // --- END EDIT ---
 
 
@@ -44,7 +44,12 @@ float ref_1 = 0, ref_2 = 0;
 float uf_prev_1 = 0, uf_prev_2 = 0;
 float alpha_u = 0.9;
 
+float u_p_2;
+float u_d_2;
+float u_i_2;
+
 unsigned long loop_prev = 0;
+int loop_counter = 0;
 
 // ----- Path data -----
 int target_1[MAX_POINTS];
@@ -60,6 +65,7 @@ struct LogEntry {
   float e_1, e_2;
   float ref1, ref2;
   float uf_prev_1, uf_prev_2;
+  float u_p_2, u_d_2, u_i_2;
 };
 LogEntry logs[MAX_LOGS];
 int log_count = 0;
@@ -108,7 +114,7 @@ void loop() {
 
     // --- Update reference only every REF_INTERVAL loops ---
     static unsigned long ref_timer = 0;
-    const unsigned long REF_INTERVAL_US = 2000;  // 5 ms between new points
+    const unsigned long REF_INTERVAL_US = 5000;  // 5 ms between new points
     if (now - ref_timer >= REF_INTERVAL_US && current_index < total_points) {
       ref_timer = now;
       ref_1 = target_1[current_index];
@@ -123,7 +129,7 @@ void loop() {
     // Motor 1
     e_1 = ref_1 - pos_1;
 
-    if  ((e_1 <= (255.0/k_p_1)) && (e_1 >= -(255.0/k_p_1))){
+    if  ((e_1 <= 25) && (e_1 >= -25)){
       sum_e_1 += e_1 * CONTROL_INTERVAL_US / 1e6;
     } else {
       sum_e_1 = 0.0;
@@ -141,15 +147,21 @@ void loop() {
     // Motor 2
     e_2 = ref_2 - pos_2;
 
-    if  ((e_2 <= (255.0/k_p_2)) && (e_2 >= -(255.0/k_p_2))){
+    if  ((e_2 <= 25) && (e_2 >= -25)){
       sum_e_2 += e_2 * CONTROL_INTERVAL_US / 1e6;
     } else {
       sum_e_2 = 0.0;
     }
 
+
+    u_p_2 = k_p_2 * e_2;
+    u_d_2 = k_d_2 * (e_2 - e_prev_2) * 1e6 / CONTROL_INTERVAL_US;
+    u_i_2 = k_i_2 * sum_e_2;
+    
     // --- EDIT: Using Motor 2's PID gains ---
     u_2 = k_p_2 * e_2 + k_d_2 * (e_2 - e_prev_2) * 1e6 / CONTROL_INTERVAL_US + k_i_2 * sum_e_2;
     // --- END EDIT ---
+    
 
     float uf_2 = alpha_u * uf_prev_2 + (1.0 - alpha_u) * u_2;
     e_prev_2 = e_2;
@@ -160,16 +172,14 @@ void loop() {
     setMotor((uf_2 > 0) - (uf_2 < 0), abs(uf_2), PWM_pin_2, IN1_2, IN2_2);
 
     // --- Log every N control loops ---
-    static int loop_counter = 0;
     loop_counter++;
     if ((loop_counter % LOG_INTERVAL) == 0 && log_count < MAX_LOGS) {
-      logs[log_count++] = {current_index, e_1, e_2, ref_1, ref_2, uf_prev_1, uf_prev_2};
+      logs[log_count++] = {current_index, e_1, e_2, ref_1, ref_2, uf_prev_1, uf_prev_2, u_p_2, u_d_2, u_i_2};
     }
 
     // --- End condition ---
     if (current_index >= total_points && abs(e_1) < 5 && abs(e_2) < 5) {
       back_to_start = true;
-      current_index = 0;
 //      setMotor(0, 0, PWM_pin_1, IN1_1, IN2_1);
 //      setMotor(0, 0, PWM_pin_2, IN1_2, IN2_2);
       if (e_1 == 0){
@@ -179,9 +189,11 @@ void loop() {
         setMotor(0, 0, PWM_pin_2, IN1_2, IN2_2);
       }
       if (e_1 == 0 && e_2 == 0){
+        current_index = 0;
         dumpLogs();
         resetLog();
         path_loaded = false;
+        
       }
 
       return;
@@ -282,6 +294,12 @@ void dumpLogs() {
     Serial.print(logs[i].e_1);
     Serial.print(',');
     Serial.print(logs[i].ref2);
+    Serial.print(',');
+    Serial.print(logs[i].e_2);
+    Serial.print(',');
+    Serial.print(logs[i].uf_prev_1);
+    Serial.print(',');
+    Serial.print(logs[i].uf_prev_2);
     Serial.print(',');
     Serial.print(logs[i].e_2);
     Serial.print(',');

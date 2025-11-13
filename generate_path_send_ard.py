@@ -14,11 +14,12 @@ COUNTS_PER_ROTATION = 2100.0
 # --- NEW SETTINGS ---
 MOVE_TO_START_AT_BEGINNING = True
 RETURN_TO_HOME_AT_END = True
-TOTAL_STEPS = 2000    # Total steps for the entire motion
-Time_For_Drawing = 3  # Total time (in seconds) for the *entire* motion
+#TOTAL_STEPS = 2000    # Total steps for the entire motion
+Time_For_Drawing = 5  # Total time (in seconds) for the *entire* motion
 Plotting_Freq = 0.002     # Time (in seconds) between points
 cluster_ratio = 0.5   # Ratio of cluster steps to total steps for shapes, lower value = more cluster points
-percentage_start = 20   # Percentage of total time for "move to start"
+cluster_ratio_start = 0.4  # Ratio of cluster steps to total steps for "move to start", lower value = more cluster points
+percentage_start = 10   # Percentage of total time for "move to start"
 percentage_home = 10   # Percentage of total time for "return to home"
 
 # --- NEW: CHOOSE YOUR INTERPOLATION METHOD ---
@@ -29,7 +30,7 @@ INTERPOLATION_MODE = "JOINT"
 
 
 # --- CHOOSE YOUR SHAPE TO DRAW ---
-shape_to_plot = "C"   # "S" = Square, "C" = Circle, "T" = Triangle
+shape_to_plot = "S"   # "S" = Square, "C" = Circle, "T" = Triangle
 Plot_shape = False    
 Plot_perf = True      # Whether to plot the path (Set to True to verify layout)
 user = "Conor"
@@ -48,10 +49,10 @@ u_d_2_data = []
 u_i_2_data = []
 
 # --- Step Calculation ---
-#TOTAL_STEPS = int(Time_For_Drawing / Plotting_Freq)
+TOTAL_STEPS = int(Time_For_Drawing / Plotting_Freq)
 STEPS_FOR_START_PATH = int(TOTAL_STEPS * (percentage_start / 100.0))
 STEPS_FOR_HOME_PATH = int(TOTAL_STEPS * (percentage_home / 100.0))
-REMAINING_STEPS = TOTAL_STEPS - STEPS_FOR_START_PATH - STEPS_FOR_HOME_PATH
+REMAINING_STEPS = TOTAL_STEPS
 print(f"Total Steps: {TOTAL_STEPS}")
 print(f"   > Start Path: {STEPS_FOR_START_PATH}")
 print(f"   > Home Path:  {STEPS_FOR_HOME_PATH}")
@@ -179,44 +180,88 @@ def generate_triangle(start_x, start_y, side_length, steps_per_side, cluster_ste
     points.extend(generate_eased_line(v3[0], v3[1], v1[0], v1[1], steps_per_side, cluster_steps))
     return points
 
-# --- 5. PLOTTING FUNCTION ---
-def plot_path_with_colours(xy_points, arm_lengths=(L1, L2)):
-    print("Plotting generated path...")
-    x_vals = [p[0] for p in xy_points]
-    y_vals = [p[1] for p in xy_points]
-    N = len(xy_points)
-    if N <= 1:
-        print("Not enough points to plot.")
+# --- 5. NEW PLOTTING FUNCTION FOR REFERENCE VALUES ---
+def plot_reference_counts(motor1_counts, motor2_counts, steps_start=0, steps_shape=0):
+    """
+    Plot the reference motor counts (positions) being sent to Arduino.
+    
+    Args:
+        motor1_counts: List of motor 1 position counts
+        motor2_counts: List of motor 2 position counts
+        steps_start: Number of steps in the "move to start" phase
+        steps_shape: Number of steps in the "shape" phase
+    """
+    print("Plotting reference motor counts...")
+    
+    N = len(motor1_counts)
+    if N == 0:
+        print("No motor counts to plot.")
         return
+    
+    # Create step indices for x-axis
+    step_indices = list(range(N))
+    
+    # Create color coding based on phase
     colours = []
     for i in range(N):
-        fraction = i / (N - 1)
-        if fraction < 0.5:
-            r, g, b = 1.0 - 2.0 * fraction, 2.0 * fraction, 0.0
+        if i < steps_start:
+            # Move to start phase - Blue
+            colours.append('blue')
+        elif i < steps_start + steps_shape:
+            # Shape drawing phase - Green
+            colours.append('green')
         else:
-            r, g, b = 0.0, 1.0 - 2.0 * (fraction - 0.5), 2.0 * (fraction - 0.5)
-        colours.append((r, g, b))
-    plt.figure(figsize=(10, 8))
-    plt.scatter(x_vals, y_vals, c=colours, s=10)
-    if arm_lengths:
-        l1, l2 = arm_lengths
-        max_reach = l1 + l2
-        min_reach = abs(l1 - l2)
-        circle_max = plt.Circle((0, 0), max_reach, color='gray', fill=False, linestyle='--', label=f'Max Reach ({max_reach}mm)')
-        circle_min = plt.Circle((0, 0), min_reach, color='gray', fill=False, linestyle=':', label=f'Min Reach ({min_reach}mm)')
-        plt.gca().add_artist(circle_max)
-        if min_reach > 0:
-            plt.gca().add_artist(circle_min)
-    plt.title('Generated Path (Colour-coded by order)')
-    plt.xlabel('X (mm)')
-    plt.ylabel('Y (mm)')
-    plt.legend()
-    plt.grid(True)
-    plt.axis('equal')
+            # Return to home phase - Red
+            colours.append('red')
+    
+    # Create figure with two subplots
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+    fig.suptitle('Reference Motor Positions Sent to Arduino', fontsize=16)
+    
+    # Plot Motor 1 Reference
+    ax1.scatter(step_indices, motor1_counts, c=colours, s=10, alpha=0.6)
+    ax1.plot(step_indices, motor1_counts, 'k-', alpha=0.3, linewidth=0.5)
+    ax1.set_ylabel('Motor 1 Position (Counts)')
+    ax1.set_title('Motor 1 Reference Trajectory')
+    ax1.grid(True, alpha=0.3)
+    
+    # Add phase markers for Motor 1
+    if steps_start > 0:
+        ax1.axvline(x=steps_start, color='blue', linestyle='--', alpha=0.5, label='Start of Shape')
+    if steps_shape > 0:
+        ax1.axvline(x=steps_start + steps_shape, color='red', linestyle='--', alpha=0.5, label='Start of Return')
+    ax1.legend()
+    
+    # Plot Motor 2 Reference
+    ax2.scatter(step_indices, motor2_counts, c=colours, s=10, alpha=0.6)
+    ax2.plot(step_indices, motor2_counts, 'k-', alpha=0.3, linewidth=0.5)
+    ax2.set_xlabel('Step Index')
+    ax2.set_ylabel('Motor 2 Position (Counts)')
+    ax2.set_title('Motor 2 Reference Trajectory')
+    ax2.grid(True, alpha=0.3)
+    
+    # Add phase markers for Motor 2
+    if steps_start > 0:
+        ax2.axvline(x=steps_start, color='blue', linestyle='--', alpha=0.5, label='Start of Shape')
+    if steps_shape > 0:
+        ax2.axvline(x=steps_start + steps_shape, color='red', linestyle='--', alpha=0.5, label='Start of Return')
+    ax2.legend()
+    
+    # Add text annotations for phases
+    if steps_start > 0:
+        ax1.text(steps_start/2, ax1.get_ylim()[1]*0.95, 'Move to Start', 
+                ha='center', va='top', fontsize=10, color='blue', alpha=0.7)
+    if steps_shape > 0:
+        ax1.text(steps_start + steps_shape/2, ax1.get_ylim()[1]*0.95, 'Draw Shape', 
+                ha='center', va='top', fontsize=10, color='green', alpha=0.7)
+    if N > steps_start + steps_shape:
+        ax1.text(steps_start + steps_shape + (N - steps_start - steps_shape)/2, 
+                ax1.get_ylim()[1]*0.95, 'Return Home', 
+                ha='center', va='top', fontsize=10, color='red', alpha=0.7)
+    
+    plt.tight_layout(rect=[0, 0.03, 1, 0.96])
     print("Showing plot. Close the plot window to continue...")
     plt.show()
-    
-
 
 
 # --- 6. MAIN EXECUTION ---
@@ -263,12 +308,6 @@ if __name__ == "__main__":
             steps_per_side=steps_per_side_tri,
             cluster_steps=cluster_steps_per_cluster
         )
-
-    
-    # --- (REMOVED) "Move to Start" and "Return to Home" from xy_points ---
-    # We will do this in joint-space (counts) later.
-    
-
     
     # --- Process the chosen SHAPE path ---
     if not xy_points:
@@ -300,53 +339,122 @@ if __name__ == "__main__":
     c1_home = radians_to_counts(home_angles[0], COUNTS_PER_ROTATION)
     c2_home = radians_to_counts(home_angles[1], COUNTS_PER_ROTATION) 
     
-    if MOVE_TO_START_AT_BEGINNING and motor1_counts:
-        print(f"Adding 'Move to Start' sequence ({STEPS_FOR_START_PATH} steps)...")
-        print(f"   > Using {INTERPOLATION_MODE} interpolation.")
-        
-        # 1. Get Target counts (first point of the shape)
-        c1_start_shape = motor1_counts[0]
-        c2_start_shape = motor2_counts[0]
+ # --- NEW FUNCTION (add this with other path generator functions) ---
+def generate_clustered_t_values(total_steps, cluster_steps):
+    """
+    Generate t values (0 to 1) with clustering at the start and end.
+    
+    Args:
+        total_steps: Total number of steps/segments
+        cluster_steps: Number of cluster points at each end
+    
+    Returns:
+        List of t values from 0.0 to 1.0 with clustering
+    """
+    if total_steps <= 0:
+        return [0.0]
+    
+    linear_steps = total_steps - (2 * cluster_steps)
+    if linear_steps < 0:
+        print(f"WARNING: Reducing cluster_steps for start path. {total_steps} total segments is not enough for {cluster_steps} cluster points per side.")
+        cluster_steps = total_steps // 2
+        linear_steps = total_steps - (2 * cluster_steps)
+        print(f"         Set cluster_steps = {cluster_steps}, linear_steps = {linear_steps}")
+    
+    t_values = [0.0]
+    
+    # Add clustered points at the start
+    for i in range(cluster_steps, 0, -1):
+        t_values.append(0.5 ** i)
+    
+    t_start = 0.5 ** cluster_steps if cluster_steps > 0 else 0.0
+    t_end = 1.0 - (0.5 ** cluster_steps) if cluster_steps > 0 else 1.0
+    
+    # Add linear middle section
+    linear_segment_count = max(1, linear_steps)
+    for i in range(1, linear_steps):
+        fraction = i / linear_segment_count
+        t_values.append(t_start + (t_end - t_start) * fraction)
+    
+    # Add clustered points at the end
+    for i in range(1, cluster_steps + 1):
+        t_values.append(1.0 - (0.5 ** i))
+    
+    t_values.append(1.0)
+    
+    # Sort to ensure monotonic progression
+    t_values.sort()
+    
+    return t_values
 
-        if INTERPOLATION_MODE == "JOINT":
-            # --- METHOD 1: JOINT SPACE INTERPOLATION ---
-            for i in range(STEPS_FOR_START_PATH): # Creates points 0 to STEPS-1
-                fraction = float(i) / STEPS_FOR_START_PATH
-                
-                c1 = c1_home + (c1_start_shape - c1_home) * fraction
-                c2 = c2_home + (c2_start_shape - c2_home) * fraction
-                
-                motor1_start_path.append(int(round(c1))) 
-                motor2_start_path.append(int(round(c2)))
+# --- MODIFIED: Generate "Move to Start" WITH CLUSTERING ---
+motor1_start_path = []
+motor2_start_path = []
 
-        elif INTERPOLATION_MODE == "CARTESIAN":
-            # --- METHOD 2: CARTESIAN SPACE INTERPOLATION ---
-            (start_shape_x, start_shape_y) = xy_points[0]
+# --- DEFINE HOME POS ---
+home_x = L1 + L2
+home_y = 0.0
+home_angles = calculate_ik(home_x, home_y, L1, L2)
+c1_home = radians_to_counts(home_angles[0], COUNTS_PER_ROTATION)
+c2_home = radians_to_counts(home_angles[1], COUNTS_PER_ROTATION) 
+
+if MOVE_TO_START_AT_BEGINNING and motor1_counts:
+    print(f"Adding 'Move to Start' sequence ({STEPS_FOR_START_PATH} steps) WITH CLUSTERING...")
+    print(f"   > Using {INTERPOLATION_MODE} interpolation.")
+    print(f"   > Cluster ratio: {cluster_ratio_start}")
+    
+    # Calculate cluster steps for start path
+    total_linear_steps_start = int(STEPS_FOR_START_PATH * cluster_ratio_start)
+    total_cluster_steps_start = STEPS_FOR_START_PATH - total_linear_steps_start
+    cluster_steps_start = total_cluster_steps_start // 2  # Divide between start and end
+    
+    print(f"   > Total steps: {STEPS_FOR_START_PATH}")
+    print(f"   > Cluster steps (each end): {cluster_steps_start}")
+    print(f"   > Linear steps (middle): {total_linear_steps_start}")
+    
+    # Generate clustered t values
+    t_values = generate_clustered_t_values(STEPS_FOR_START_PATH, cluster_steps_start)
+    
+    # 1. Get Target counts (first point of the shape)
+    c1_start_shape = motor1_counts[0]
+    c2_start_shape = motor2_counts[0]
+
+    if INTERPOLATION_MODE == "JOINT":
+        # --- METHOD 1: JOINT SPACE INTERPOLATION WITH CLUSTERING ---
+        for t in t_values[:-1]:  # Exclude the last point (t=1.0) to avoid duplication
+            c1 = c1_home + (c1_start_shape - c1_home) * t
+            c2 = c2_home + (c2_start_shape - c2_home) * t
             
-            for i in range(STEPS_FOR_START_PATH): # Creates points 0 to STEPS-1
-                fraction = float(i) / STEPS_FOR_START_PATH
-                x = home_x + (start_shape_x - home_x) * fraction
-                y = home_y + (start_shape_y - home_y) * fraction
-                
-                # Now run IK for this (x,y) point
-                angles = calculate_ik(x, y, L1, L2)
-                if angles:
-                    theta1, theta2 = angles
-                    count1 = radians_to_counts(theta1, COUNTS_PER_ROTATION)
-                    count2 = radians_to_counts(theta2, COUNTS_PER_ROTATION)
-                    motor1_start_path.append(count1)
-                    motor2_start_path.append(-count2) # Keep inversion
-                else:
-                    # Handle unreachable point - append last valid point
-                    print(f"Warning: Start path point {i} unreachable. Holding last position.")
-                    if motor1_start_path:
-                        motor1_start_path.append(motor1_start_path[-1])
-                        motor2_start_path.append(motor2_start_path[-1])
-                    else: # If first point is unreachable, use home counts
-                        motor1_start_path.append(c1_home)
-                        motor2_start_path.append(c2_home)
-        else:
-            print(f"ERROR: Unknown INTERPOLATION_MODE: '{INTERPOLATION_MODE}'")
+            motor1_start_path.append(int(round(c1))) 
+            motor2_start_path.append(int(round(c2)))
+
+    elif INTERPOLATION_MODE == "CARTESIAN":
+        # --- METHOD 2: CARTESIAN SPACE INTERPOLATION WITH CLUSTERING ---
+        (start_shape_x, start_shape_y) = xy_points[0]
+        
+        for t in t_values[:-1]:  # Exclude the last point (t=1.0) to avoid duplication
+            x = home_x + (start_shape_x - home_x) * t
+            y = home_y + (start_shape_y - home_y) * t
+            
+            # Now run IK for this (x,y) point
+            angles = calculate_ik(x, y, L1, L2)
+            if angles:
+                theta1, theta2 = angles
+                count1 = radians_to_counts(theta1, COUNTS_PER_ROTATION)
+                count2 = radians_to_counts(theta2, COUNTS_PER_ROTATION)
+                motor1_start_path.append(count1)
+                motor2_start_path.append(-count2) # Keep inversion
+            else:
+                # Handle unreachable point - append last valid point
+                print(f"Warning: Start path point (t={t:.4f}) unreachable. Holding last position.")
+                if motor1_start_path:
+                    motor1_start_path.append(motor1_start_path[-1])
+                    motor2_start_path.append(motor2_start_path[-1])
+                else: # If first point is unreachable, use home counts
+                    motor1_start_path.append(c1_home)
+                    motor2_start_path.append(c2_home)
+    else:
+        print(f"ERROR: Unknown INTERPOLATION_MODE: '{INTERPOLATION_MODE}'")
 
     
     # --- MODIFIED: Generate "Return to Home" ---
@@ -405,25 +513,16 @@ if __name__ == "__main__":
     final_motor1_counts = motor1_start_path + motor1_counts + motor1_home_path
     final_motor2_counts = motor2_start_path + motor2_counts + motor2_home_path
 
-    # --- MODIFIED: Plot the FULL path using Forward Kinematics ---
+    # --- MODIFIED: Plot the reference motor counts being sent ---
     if Plot_shape:
         if final_motor1_counts:
-            print("Calculating Forward Kinematics for full path plotting...")
-            full_xy_path = []
-            for c1, c2 in zip(final_motor1_counts, final_motor2_counts):
-                # Convert counts back to the radians *used by the IK model*
-                theta1_rad = counts_to_radians(c1, COUNTS_PER_ROTATION)
-                # IMPORTANT: Invert c2 back to match the IK's theta2
-                # (c2 is the *inverted* count, so -c2 is the original)
-                theta2_rad = counts_to_radians(-c2, COUNTS_PER_ROTATION) 
-                
-                # Calculate the (x, y) position using FK
-                x, y = calculate_fk(theta1_rad, theta2_rad, L1, L2)
-                full_xy_path.append((x, y))
-            
-            # Now plot this new, complete list
-            plot_path_with_colours(full_xy_path, arm_lengths=(L1, L2))
-            
+            print("Plotting reference motor counts (values being sent to Arduino)...")
+            plot_reference_counts(
+                final_motor1_counts, 
+                final_motor2_counts,
+                steps_start=len(motor1_start_path),
+                steps_shape=len(motor1_counts)
+            )
         else:
             print("No motor counts were generated. Cannot plot path.")
             exit()

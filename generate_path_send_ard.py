@@ -9,33 +9,22 @@ import matplotlib.pyplot as plt
 # --- 1. CONFIGURE YOUR ROBOT ---
 L1 = 82.0  # Length of arm 1 (e.g., in mm)
 L2 = 75.0  # Length of arm 2 (e.g., in mm)
+indent = 10  # Indent from edge of reachable area (in mm)
 COUNTS_PER_ROTATION = 2100.0
 
 # --- NEW SETTINGS ---
 MOVE_TO_START_AT_BEGINNING = True
 RETURN_TO_HOME_AT_END = True
-#TOTAL_STEPS = 2000    # Total steps for the entire motion
-Time_For_Drawing = 5  # Total time (in seconds) for the *entire* motion
-Plotting_Freq = 0.002     # Time (in seconds) between points
-cluster_ratio = 0.5   # Ratio of cluster steps to total steps for shapes, lower value = more cluster points
-cluster_ratio_start = 0.4  # Ratio of cluster steps to total steps for "move to start", lower value = more cluster points
-percentage_start = 10   # Percentage of total time for "move to start"
-percentage_home = 10   # Percentage of total time for "return to home"
-
-# --- NEW: CHOOSE YOUR INTERPOLATION METHOD ---
-# "JOINT"     = Linear interpolation of motor counts (smoother for motors, curved in x,y)
-# "CARTESIAN" = Linear interpolation of (x,y) coordinates (straight line in x,y, can be harsh for motors)
-INTERPOLATION_MODE = "JOINT" 
-#INTERPOLATION_MODE = "CARTESIAN"
+Plotting_Freq = 0.002      # Time (in seconds) between points. 0.002 = 500Hz
 
 
 # --- CHOOSE YOUR SHAPE TO DRAW ---
-shape_to_plot = "S"   # "S" = Square, "C" = Circle, "T" = Triangle
-Plot_shape = False    
+shape_to_plot = "C"   # "S" = Square, "C" = Circle, "T" = Triangle
+Plot_shape = True     # Whether to plot the shape (Set to True to verify layout)    
 Plot_perf = True      # Whether to plot the path (Set to True to verify layout)
 user = "Conor"
 #user = "Jamie"
-#user = "Hugo"
+#user ="Hugo"
 
 #arrays for data storing
 ref_1_data = []
@@ -47,16 +36,6 @@ uf_prev_2_data = []
 u_p_2_data = []
 u_d_2_data = []
 u_i_2_data = []
-
-# --- Step Calculation ---
-TOTAL_STEPS = int(Time_For_Drawing / Plotting_Freq)
-STEPS_FOR_START_PATH = int(TOTAL_STEPS * (percentage_start / 100.0))
-STEPS_FOR_HOME_PATH = int(TOTAL_STEPS * (percentage_home / 100.0))
-REMAINING_STEPS = TOTAL_STEPS
-print(f"Total Steps: {TOTAL_STEPS}")
-print(f"   > Start Path: {STEPS_FOR_START_PATH}")
-print(f"   > Home Path:  {STEPS_FOR_HOME_PATH}")
-print(f"   > Shape Path: {REMAINING_STEPS}")
 
 # --- 3. CORE FUNCTIONS (Kinematics) ---
 # (Unchanged)
@@ -121,7 +100,7 @@ def generate_eased_line(x_start, y_start, x_end, y_end, steps, cluster_steps):
         print(f"WARNING: Reducing cluster_steps. {steps} total segments is not enough for {cluster_steps} cluster points per side.")
         cluster_steps = steps // 2
         linear_steps = steps - (2 * cluster_steps)
-        print(f"         Set cluster_steps = {cluster_steps}, linear_steps = {linear_steps}")
+        print(f"        Set cluster_steps = {cluster_steps}, linear_steps = {linear_steps}")
     t_values = [0.0]
     for i in range(cluster_steps, 0, -1):
         t_values.append(0.5 ** i)
@@ -147,10 +126,11 @@ def generate_eased_line(x_start, y_start, x_end, y_end, steps, cluster_steps):
 
 def generate_square(centre_x, centre_y, side_length, steps_per_side, cluster_steps):
     half_side = side_length / 2.0
-    c1 = (centre_x + half_side, centre_y + half_side) 
-    c2 = (centre_x - half_side, centre_y + half_side) 
-    c3 = (centre_x - half_side, centre_y - half_side) 
-    c4 = (centre_x + half_side, centre_y - half_side) 
+    diag_side = (2 * ((half_side)**2))**(1/2)
+    c1 = (centre_x + diag_side, centre_y) # top-left
+    c2 = (centre_x, centre_y - diag_side) # bottom-left
+    c3 = (centre_x - diag_side, centre_y) # bottom-right
+    c4 = (centre_x, centre_y + diag_side) # top-right
     print(f"Square side: {steps_per_side} steps = {cluster_steps} (cluster) + {steps_per_side - 2*cluster_steps} (linear) + {cluster_steps} (cluster)")
     points = []
     points.extend(generate_eased_line(c1[0], c1[1], c2[0], c2[1], steps_per_side, cluster_steps)[:-1])
@@ -170,9 +150,9 @@ def generate_circle(centre_x, centre_y, radius, steps):
 
 def generate_triangle(start_x, start_y, side_length, steps_per_side, cluster_steps):
     height = side_length * (math.sqrt(3) / 2.0)
-    v3 = (start_x, start_y)
-    v1 = (start_x + side_length, start_y)
-    v2 = (start_x + side_length / 2.0, start_y + height)
+    v1 = (start_x, start_y)
+    v2 = (start_x - height, start_y + (side_length/2))
+    v3 = (start_x - height, start_y - (side_length/2))
     print(f"Triangle side: {steps_per_side} steps = {cluster_steps} (cluster) + {steps_per_side - 2*cluster_steps} (linear) + {cluster_steps} (cluster)")
     points = []
     points.extend(generate_eased_line(v1[0], v1[1], v2[0], v2[1], steps_per_side, cluster_steps)[:-1])
@@ -191,7 +171,6 @@ def plot_reference_counts(motor1_counts, motor2_counts, steps_start=0, steps_sha
         steps_start: Number of steps in the "move to start" phase
         steps_shape: Number of steps in the "shape" phase
     """
-    print("Plotting reference motor counts...")
     
     N = len(motor1_counts)
     if N == 0:
@@ -250,61 +229,94 @@ def plot_reference_counts(motor1_counts, motor2_counts, steps_start=0, steps_sha
     # Add text annotations for phases
     if steps_start > 0:
         ax1.text(steps_start/2, ax1.get_ylim()[1]*0.95, 'Move to Start', 
-                ha='center', va='top', fontsize=10, color='blue', alpha=0.7)
+                 ha='center', va='top', fontsize=10, color='blue', alpha=0.7)
     if steps_shape > 0:
         ax1.text(steps_start + steps_shape/2, ax1.get_ylim()[1]*0.95, 'Draw Shape', 
-                ha='center', va='top', fontsize=10, color='green', alpha=0.7)
+                 ha='center', va='top', fontsize=10, color='green', alpha=0.7)
     if N > steps_start + steps_shape:
         ax1.text(steps_start + steps_shape + (N - steps_start - steps_shape)/2, 
-                ax1.get_ylim()[1]*0.95, 'Return Home', 
-                ha='center', va='top', fontsize=10, color='red', alpha=0.7)
+                 ax1.get_ylim()[1]*0.95, 'Return Home', 
+                 ha='center', va='top', fontsize=10, color='red', alpha=0.7)
     
     plt.tight_layout(rect=[0, 0.03, 1, 0.96])
-    print("Showing plot. Close the plot window to continue...")
     plt.show()
 
 
 # --- 6. MAIN EXECUTION ---
 if __name__ == "__main__":
     
+    # --- 1. NEW: SET PARAMETERS BASED ON SHAPE ---    
+    if shape_to_plot == "S":
+        Time_For_Drawing = 5.0      # Total time (in seconds) for *drawing the shape*
+        cluster_ratio = 0.5         # Ratio of cluster steps to total steps for shapes
+        cluster_ratio_start = 0.75   # Ratio of cluster steps to total steps for "move to start"
+        percentage_start = 12       # Percentage of *shape steps* for "move to start"
+        percentage_home = 12        # Percentage of *shape steps* for "return to home"
+        
+    elif shape_to_plot == "C":
+        Time_For_Drawing = 2.0
+        cluster_ratio = 0.0         # Not used for circle
+        cluster_ratio_start = 0.75   # Use 0.2 for a gentler start/end on the start path
+        percentage_start = 10
+        percentage_home = 10
+
+    elif shape_to_plot == "T":
+        Time_For_Drawing = 3.0
+        cluster_ratio = 0.5
+        cluster_ratio_start = 0.75
+        percentage_start = 12
+        percentage_home = 12
+    
+    # --- 2. NEW: STEP CALCULATION (based on per-shape params) ---
+    STEPS_FOR_SHAPE = int(Time_For_Drawing / Plotting_Freq)
+    STEPS_FOR_START_PATH = int(STEPS_FOR_SHAPE * (percentage_start / 100.0))
+    STEPS_FOR_HOME_PATH = int(STEPS_FOR_SHAPE * (percentage_home / 100.0))
+    TOTAL_STEPS_SENT = STEPS_FOR_START_PATH + STEPS_FOR_SHAPE + STEPS_FOR_HOME_PATH
+
+    print(f"--- Step Calculation ---")
+    print(f"Shape Drawing Time: {Time_For_Drawing}s")
+    print(f"Shape Steps: {STEPS_FOR_SHAPE} (at {Plotting_Freq*1000:.1f} ms/step)")
+    print(f"Start Path Steps: {STEPS_FOR_START_PATH} ({percentage_start} % of shape steps)")
+    print(f"Home Path Steps: {STEPS_FOR_HOME_PATH} ({percentage_home} % of shape steps)")
+    print(f"TOTAL STEPS TO SEND: {TOTAL_STEPS_SENT}")
+    print("--------------------------\n")
+    
+    
     xy_points = []
     path_name = "path_unknown"
     
-    # --- CHOOSE YOUR SHAPE (This part is unchanged) ---
+    # --- 3. GENERATE SHAPE (Using STEPS_FOR_SHAPE) ---
     if shape_to_plot == "S":
-        print("Generating Square Path...")
         path_name = "path_square"
         # ... (rest of square logic unchanged)
-        total_linear_steps = int(REMAINING_STEPS // (1/cluster_ratio))
-        total_cluster_steps = REMAINING_STEPS - total_linear_steps
+        total_linear_steps = int(STEPS_FOR_SHAPE // (1/cluster_ratio))
+        total_cluster_steps = STEPS_FOR_SHAPE - total_linear_steps
         linear_steps_per_side = total_linear_steps // 4
         cluster_steps_per_cluster = total_cluster_steps // 8
         steps_per_side_sq = linear_steps_per_side + (2 * cluster_steps_per_cluster)
         xy_points = generate_square(
-            centre_x=100, centre_y=0, side_length=83, 
+            centre_x=L1 + L2 - (2*(((83)/2)**2))**(1/2) - indent, centre_y=0, side_length=83, 
             steps_per_side=steps_per_side_sq, 
             cluster_steps=cluster_steps_per_cluster
         )
     
     elif shape_to_plot == "C":
-        print("Generating Circle Path...")
         path_name = "path_circle"
         xy_points = generate_circle(
-            centre_x=100, centre_y=0, radius=41, 
-            steps=REMAINING_STEPS
+            centre_x=L1 + L2 - 41 - indent, centre_y=0, radius=41, 
+            steps=STEPS_FOR_SHAPE
         )
 
     elif shape_to_plot == "T":
-        print("Generating Triangle Path...")
         path_name = "path_triangle"
         # ... (rest of triangle logic unchanged)
-        total_linear_steps = int(REMAINING_STEPS // (1/cluster_ratio))
-        total_cluster_steps = REMAINING_STEPS - total_linear_steps
+        total_linear_steps = int(STEPS_FOR_SHAPE // (1/cluster_ratio))
+        total_cluster_steps = STEPS_FOR_SHAPE - total_linear_steps
         linear_steps_per_side = total_linear_steps // 3
         cluster_steps_per_cluster = total_cluster_steps // 6
         steps_per_side_tri = linear_steps_per_side + (2 * cluster_steps_per_cluster)
         xy_points = generate_triangle(
-            start_x=50, start_y=-40, side_length=97, 
+            start_x=L1 + L2 - indent, start_y=0, side_length=97, 
             steps_per_side=steps_per_side_tri,
             cluster_steps=cluster_steps_per_cluster
         )
@@ -314,7 +326,6 @@ if __name__ == "__main__":
         print(f"No shape selected or points generated. Set 'shape_to_plot' to 'S', 'C', or 'T'.")
         exit()
 
-    print("Calculating Inverse Kinematics for SHAPE...")
     motor1_counts = []
     motor2_counts = []
     
@@ -339,7 +350,7 @@ if __name__ == "__main__":
     c1_home = radians_to_counts(home_angles[0], COUNTS_PER_ROTATION)
     c2_home = radians_to_counts(home_angles[1], COUNTS_PER_ROTATION) 
     
- # --- NEW FUNCTION (add this with other path generator functions) ---
+# --- NEW FUNCTION (add this with other path generator functions) ---
 def generate_clustered_t_values(total_steps, cluster_steps):
     """
     Generate t values (0 to 1) with clustering at the start and end.
@@ -359,7 +370,7 @@ def generate_clustered_t_values(total_steps, cluster_steps):
         print(f"WARNING: Reducing cluster_steps for start path. {total_steps} total segments is not enough for {cluster_steps} cluster points per side.")
         cluster_steps = total_steps // 2
         linear_steps = total_steps - (2 * cluster_steps)
-        print(f"         Set cluster_steps = {cluster_steps}, linear_steps = {linear_steps}")
+        print(f"        Set cluster_steps = {cluster_steps}, linear_steps = {linear_steps}")
     
     t_values = [0.0]
     
@@ -399,18 +410,12 @@ c1_home = radians_to_counts(home_angles[0], COUNTS_PER_ROTATION)
 c2_home = radians_to_counts(home_angles[1], COUNTS_PER_ROTATION) 
 
 if MOVE_TO_START_AT_BEGINNING and motor1_counts:
-    print(f"Adding 'Move to Start' sequence ({STEPS_FOR_START_PATH} steps) WITH CLUSTERING...")
-    print(f"   > Using {INTERPOLATION_MODE} interpolation.")
-    print(f"   > Cluster ratio: {cluster_ratio_start}")
     
     # Calculate cluster steps for start path
+    # MODIFIED: cluster_ratio_start is now the ratio of *linear* steps
     total_linear_steps_start = int(STEPS_FOR_START_PATH * cluster_ratio_start)
     total_cluster_steps_start = STEPS_FOR_START_PATH - total_linear_steps_start
     cluster_steps_start = total_cluster_steps_start // 2  # Divide between start and end
-    
-    print(f"   > Total steps: {STEPS_FOR_START_PATH}")
-    print(f"   > Cluster steps (each end): {cluster_steps_start}")
-    print(f"   > Linear steps (middle): {total_linear_steps_start}")
     
     # Generate clustered t values
     t_values = generate_clustered_t_values(STEPS_FOR_START_PATH, cluster_steps_start)
@@ -419,104 +424,50 @@ if MOVE_TO_START_AT_BEGINNING and motor1_counts:
     c1_start_shape = motor1_counts[0]
     c2_start_shape = motor2_counts[0]
 
-    if INTERPOLATION_MODE == "JOINT":
-        # --- METHOD 1: JOINT SPACE INTERPOLATION WITH CLUSTERING ---
-        for t in t_values[:-1]:  # Exclude the last point (t=1.0) to avoid duplication
-            c1 = c1_home + (c1_start_shape - c1_home) * t
-            c2 = c2_home + (c2_start_shape - c2_home) * t
-            
-            motor1_start_path.append(int(round(c1))) 
-            motor2_start_path.append(int(round(c2)))
-
-    elif INTERPOLATION_MODE == "CARTESIAN":
-        # --- METHOD 2: CARTESIAN SPACE INTERPOLATION WITH CLUSTERING ---
-        (start_shape_x, start_shape_y) = xy_points[0]
+    for t in t_values[:-1]:  # Exclude the last point (t=1.0) to avoid duplication
+        c1 = c1_home + (c1_start_shape - c1_home) * t
+        c2 = c2_home + (c2_start_shape - c2_home) * t
         
-        for t in t_values[:-1]:  # Exclude the last point (t=1.0) to avoid duplication
-            x = home_x + (start_shape_x - home_x) * t
-            y = home_y + (start_shape_y - home_y) * t
-            
-            # Now run IK for this (x,y) point
-            angles = calculate_ik(x, y, L1, L2)
-            if angles:
-                theta1, theta2 = angles
-                count1 = radians_to_counts(theta1, COUNTS_PER_ROTATION)
-                count2 = radians_to_counts(theta2, COUNTS_PER_ROTATION)
-                motor1_start_path.append(count1)
-                motor2_start_path.append(-count2) # Keep inversion
-            else:
-                # Handle unreachable point - append last valid point
-                print(f"Warning: Start path point (t={t:.4f}) unreachable. Holding last position.")
-                if motor1_start_path:
-                    motor1_start_path.append(motor1_start_path[-1])
-                    motor2_start_path.append(motor2_start_path[-1])
-                else: # If first point is unreachable, use home counts
-                    motor1_start_path.append(c1_home)
-                    motor2_start_path.append(c2_home)
-    else:
-        print(f"ERROR: Unknown INTERPOLATION_MODE: '{INTERPOLATION_MODE}'")
+        motor1_start_path.append(int(round(c1))) 
+        motor2_start_path.append(int(round(c2)))
 
     
-    # --- MODIFIED: Generate "Return to Home" ---
+    # --- MODIFIED: Generate "Return to Home" WITH CLUSTERING ---
     motor1_home_path = []
     motor2_home_path = []
     
     if RETURN_TO_HOME_AT_END and motor1_counts:
-        print(f"Adding 'Return to Home' sequence ({STEPS_FOR_HOME_PATH} steps)...")
-        print(f"   > Using {INTERPOLATION_MODE} interpolation.")
+
+        # 1. Calculate cluster steps for home path (using same logic as start path)
+        total_linear_steps_home = int(STEPS_FOR_HOME_PATH * cluster_ratio_start)
+        total_cluster_steps_home = STEPS_FOR_HOME_PATH - total_linear_steps_home
+        cluster_steps_home = total_cluster_steps_home // 2 # Divide between start and end
+
+        # 2. Generate clustered t values
+        t_values_home = generate_clustered_t_values(STEPS_FOR_HOME_PATH, cluster_steps_home)
         
-        # 1. Get Target counts (last point of the shape)
+        # 3. Get Target counts (last point of the shape)
         c1_end_shape = motor1_counts[-1]
-        c2_end_shape = motor2_counts[-1]
+        c2_end_shape = motor2_counts[-1]   
+
+        # 4. Interpolate using t values
+        # Skip the first point (t=0.0) to avoid duplicating the last point of the shape
+        for t in t_values_home[1:]: 
+            c1 = c1_end_shape + (c1_home - c1_end_shape) * t
+            c2 = c2_end_shape + (c2_home - c2_end_shape) * t
+            
+            motor1_home_path.append(int(round(c1)))
+            motor2_home_path.append(int(round(c2)))
+
         
-        if INTERPOLATION_MODE == "JOINT":
-            # --- METHOD 1: JOINT SPACE INTERPOLATION ---
-            for i in range(1, STEPS_FOR_HOME_PATH + 1): # Creates points 1 to STEPS
-                fraction = float(i) / STEPS_FOR_HOME_PATH
-                
-                c1 = c1_end_shape + (c1_home - c1_end_shape) * fraction
-                c2 = c2_end_shape + (c2_home - c2_end_shape) * fraction
-                
-                motor1_home_path.append(int(round(c1)))
-                motor2_home_path.append(int(round(c2)))
-
-        elif INTERPOLATION_MODE == "CARTESIAN":
-            # --- METHOD 2: CARTESIAN SPACE INTERPOLATION ---
-            (end_shape_x, end_shape_y) = xy_points[-1]
-            
-            for i in range(1, STEPS_FOR_HOME_PATH + 1): # Creates points 1 to STEPS
-                fraction = float(i) / STEPS_FOR_HOME_PATH
-                x = end_shape_x + (home_x - end_shape_x) * fraction
-                y = end_shape_y + (home_y - end_shape_y) * fraction
-                
-                # Now run IK for this (x,y) point
-                angles = calculate_ik(x, y, L1, L2)
-                if angles:
-                    theta1, theta2 = angles
-                    count1 = radians_to_counts(theta1, COUNTS_PER_ROTATION)
-                    count2 = radians_to_counts(theta2, COUNTS_PER_ROTATION)
-                    motor1_home_path.append(count1)
-                    motor2_home_path.append(-count2) # Keep inversion
-                else:
-                    # Handle unreachable point
-                    print(f"Warning: Home path point {i} unreachable. Holding last position.")
-                    if motor1_home_path:
-                        motor1_home_path.append(motor1_home_path[-1])
-                        motor2_home_path.append(motor2_home_path[-1])
-                    else: # If first point is unreachable, use shape's end counts
-                        motor1_home_path.append(c1_end_shape)
-                        motor2_home_path.append(c2_end_shape)
-
-            
-            
+        
     # --- NEW: Combine all paths ---
     final_motor1_counts = motor1_start_path + motor1_counts + motor1_home_path
     final_motor2_counts = motor2_start_path + motor2_counts + motor2_home_path
-
+    
     # --- MODIFIED: Plot the reference motor counts being sent ---
     if Plot_shape:
         if final_motor1_counts:
-            print("Plotting reference motor counts (values being sent to Arduino)...")
             plot_reference_counts(
                 final_motor1_counts, 
                 final_motor2_counts,

@@ -1,10 +1,13 @@
 #include <SimplyAtomic.h>
 
 #define MAX_POINTS 5000
-#define CONTROL_INTERVAL_US 2000      // 2 ms control step
-// #define REF_INTERVAL_US 5000         // 5 ms new reference position
-#define LOG_INTERVAL 10               // log every Nth control step
-#define MAX_LOGS 2500                 // how many log samples to keep
+#define CONTROL_INTERVAL_US 2000     // 2 ms control step
+#define LOG_INTERVAL 10              // log every Nth control step
+#define MAX_LOGS 2500              // how many log samples to keep
+
+// --- NEW: Settle logic ---
+#define SETTLE_ERROR_THRESHOLD 5     // How many counts of error is "settled"
+#define SETTLE_DURATION_US 500000  // 500ms hold time to be "settled"
 
 // ----- Motor pins -----
 #define ENCA_1 0
@@ -23,23 +26,14 @@
 volatile int posi_1 = 0, posi_2 = 0;
 
 // ----- PID tuning -----
-// --- EDIT: Created separate PID gains for each motor ---
-// float k_p = 8, k_d = 0.5, k_i = 50; // Original global gains
-float counts_per_rotation = 2100.0;
-
-// PID gains for Motor 1
 float k_p_1 = 18.0, k_d_1 = 0.8, k_i_1 = 80.0;
-
-// PID gains for Motor 2
 float k_p_2 = 18.0, k_d_2 = 0.8, k_i_2 = 80.0;
-// --- END EDIT ---
 
 
 // ----- Working vars -----
 int pos_1 = 0, pos_2 = 0;
 float e_1 = 0, e_2 = 0, e_prev_1 = 0, e_prev_2 = 0, sum_e_1 = 0, sum_e_2 = 0;
 float u_1 = 0, u_2 = 0;
-int u_amplitude_1 = 0, u_amplitude_2 = 0, u_sign_1 = 0, u_sign_2 = 0;
 float ref_1 = 0, ref_2 = 0;
 float uf_prev_1 = 0, uf_prev_2 = 0;
 float alpha_u = 0.8;
@@ -57,8 +51,12 @@ float target_1[MAX_POINTS];
 float target_2[MAX_POINTS];
 int total_points = 0;
 int current_index = 0;
-bool path_loaded = false;
-bool back_to_start = false;
+
+// ----- State Machine Vars -----
+bool path_loaded = false;     // True when path is in memory
+bool path_finished = false;   // True when index >= total_points
+bool path_settled = false;    // True after holding final pos for SETTLE_DURATION
+unsigned long settle_start_time = 0; // Timer for holding
 
 // ----- RAM log buffer -----
 struct LogEntry {
@@ -91,6 +89,11 @@ void setup() {
   pinMode(IN1_2, OUTPUT);
   pinMode(IN2_2, OUTPUT);
 
+  // --- NEW ---
+  // Reset all state variables on boot
+  resetState();
+  stopMotors();
+
   Serial.println("Pico ready. Awaiting START message...");
 }
 
@@ -100,10 +103,10 @@ void setup() {
 void loop() {
   if (!path_loaded) {
     receivePath();
-    return;
+    return; // Stay in receive mode
   }
 
-  // --- Step 2: Run control loop at fixed 5 ms ---
+  // --- Control loop always runs if path is loaded ---
   unsigned long now = micros();
   if (now - loop_prev >= CONTROL_INTERVAL_US) {
     loop_prev = now;
@@ -113,32 +116,32 @@ void loop() {
       pos_2 = posi_2;
     }
 
-    // --- Update reference only every REF_INTERVAL loops ---
-    const unsigned long REF_INTERVAL_US = 2000;  // 5 ms between new points
-    if (now - ref_timer >= REF_INTERVAL_US && current_index < total_points) {
+    // --- Path Following Logic ---
+    // Only update reference if the path is still running
+    const unsigned long REF_INTERVAL_US = 2000;
+    if (!path_finished && (now - ref_timer >= REF_INTERVAL_US)) {
       ref_timer = now;
-      ref_1 = target_1[current_index];
-      ref_2 = target_2[current_index];
-      if (back_to_start == false) {
+      if (current_index < total_points) {
+        ref_1 = target_1[current_index];
+        ref_2 = target_2[current_index];
         current_index++;
+      }
+      if (current_index >= total_points) {
+        path_finished = true; // Path points are done. Now we HOLD.
       }
     }
 
-    // --- PID Control ---
+    // --- PID Control (Always runs) ---
+    // This will follow the path, and then hold the last position
     
     // Motor 1
     e_1 = ref_1 - pos_1;
-
-    if  ((e_1 <= (255/k_p_1)) && (e_1 >= (-255/k_p_1))){
+    if  (abs(e_1) < (255.0 / k_p_1)) { // Anti-windup
       sum_e_1 += e_1 * CONTROL_INTERVAL_US / 1e6;
     } else {
       sum_e_1 = 0.0;
     }
-    
-    // --- EDIT: Using Motor 1's PID gains ---
     u_1 = k_p_1 * e_1 + k_d_1 * (e_1 - e_prev_1) * 1e6 / CONTROL_INTERVAL_US + k_i_1 * sum_e_1;
-    // --- END EDIT ---
-    
     float uf_1 = alpha_u * uf_prev_1 + (1.0 - alpha_u) * u_1;
     e_prev_1 = e_1;
     uf_1 = constrain(uf_1, -255, 255);
@@ -146,58 +149,59 @@ void loop() {
 
     // Motor 2
     e_2 = ref_2 - pos_2;
-
-    if  ((e_2 <= (255/k_p_2)) && (e_2 >= (-255/k_p_2))){
+    if (abs(e_2) < (255.0 / k_p_2)) { // Anti-windup
       sum_e_2 += e_2 * CONTROL_INTERVAL_US / 1e6;
     } else {
       sum_e_2 = 0.0;
     }
-
     u_p_2 = k_p_2 * e_2;
     u_d_2 = k_d_2 * (e_2 - e_prev_2) * 1e6 / CONTROL_INTERVAL_US;
     u_i_2 = k_i_2 * sum_e_2;
-    
-    // --- EDIT: Using Motor 2's PID gains ---
-    u_2 = k_p_2 * e_2 + k_d_2 * (e_2 - e_prev_2) * 1e6 / CONTROL_INTERVAL_US + k_i_2 * sum_e_2;
-    // --- END EDIT ---
-
-
+    u_2 = u_p_2 + u_d_2 + u_i_2;
     float uf_2 = alpha_u * uf_prev_2 + (1.0 - alpha_u) * u_2;
-
     e_prev_2 = e_2;
     uf_2 = constrain(uf_2, -255, 255);
     uf_prev_2 = uf_2;
 
-    setMotor((uf_1 > 0) - (uf_1 < 0), abs(uf_1), PWM_pin_1, IN1_1, IN2_1);
-    setMotor((uf_2 > 0) - (uf_2 < 0), abs(uf_2), PWM_pin_2, IN1_2, IN2_2);
-
-    // --- Log every N control loops ---
+    // --- Logging ---
     loop_counter++;
     if ((loop_counter % LOG_INTERVAL) == 0 && log_count < MAX_LOGS) {
       logs[log_count++] = {current_index, e_1, e_2, ref_1, ref_2, uf_prev_1, uf_prev_2, u_p_2, u_d_2, u_i_2};
     }
 
-    // --- End condition ---
-    if (current_index >= total_points && abs(e_1) < 5 && abs(e_2) < 5) {
-      back_to_start = true;
-//      setMotor(0, 0, PWM_pin_1, IN1_1, IN2_1);
-//      setMotor(0, 0, PWM_pin_2, IN1_2, IN2_2);
-      if (e_1 == 0){
-        setMotor(0, 0, PWM_pin_1, IN1_1, IN2_1);
-      }
-      if (e_2 == 0){
-        setMotor(0, 0, PWM_pin_2, IN1_2, IN2_2);
-      }
-      if (e_1 == 0 && e_2 == 0){
-        current_index = 0;
-        dumpLogs();
-        resetLog();
-        path_loaded = false;
+    // --- NEW: End condition logic ---
+    // This block replaces your old end-of-path logic
+    if (path_finished && !path_settled) {
+      // Path is done, PID is holding. Check if we are settled.
+      if (abs(e_1) < SETTLE_ERROR_THRESHOLD && abs(e_2) < SETTLE_ERROR_THRESHOLD) {
         
-      }
+        // Error is low. Start/check the settle timer.
+        if (settle_start_time == 0) {
+          settle_start_time = micros(); // Start the timer
+        }
 
-      return;
+        // Check if we've *stayed* settled for the full duration
+        if (micros() - settle_start_time >= SETTLE_DURATION_US) {
+          // --- SUCCESS! We are done and settled ---
+          path_settled = true; // 1. Lock this state
+          dumpLogs();          // 2. Send data
+          stopMotors();        // 3. Turn off motors
+          resetState();        // 4. RESET ALL CONTROLLER MEMORY
+          path_loaded = false; // 5. Go back to waiting for a path
+          return;              // 6. Exit control loop
+        }
+        
+      } else {
+        // We are not settled (or we overshot and error is high again).
+        // Reset the settle timer. We must be low-error *continuously*.
+        settle_start_time = 0;
+      }
     }
+    // --- End of new logic ---
+
+    // Drive motors (always, unless we just reset)
+    setMotor((uf_1 > 0) - (uf_1 < 0), abs(uf_1), PWM_pin_1, IN1_1, IN2_1);
+    setMotor((uf_2 > 0) - (uf_2 < 0), abs(uf_2), PWM_pin_2, IN1_2, IN2_2);
   }
 }
 
@@ -206,7 +210,6 @@ void loop() {
 // =========================================================
 void receivePath() {
   static bool receiving = false;
-  bool back_to_start = false;
   static int points_expected = 0;
   static int points_received = 0;
 
@@ -215,8 +218,14 @@ void receivePath() {
     line.trim();
     if (line.length() == 0) return;
 
-    // ---- START <N> ----
     if (line.startsWith("START")) {
+      // --- MODIFIED ---
+      // We are starting a new path. Reset *everything* to a clean slate.
+      // This is the main fix for Problem 2 (Rerunning).
+      resetState();
+      stopMotors();
+      // --- END MODIFIED ---
+      
       points_expected = line.substring(6).toInt();
       points_received = 0;
 
@@ -231,19 +240,26 @@ void receivePath() {
       return;
     }
 
-    // In receivePath(), after loading all points:
     if (line == "END") {
       receiving = false;
       total_points = points_received;
-      path_loaded = true;
-      current_index = 0;
       
-      // ADD THESE LINES:
-      ref_1 = target_1[0];  // Initialize to first target
-      ref_2 = target_2[0];  // Initialize to first target
-      
-      Serial.print("Path loaded. Points received=");
-      Serial.println(points_received);
+      if (total_points > 0) {
+        path_loaded = true; // <<< This is what starts the loop()
+        
+        // --- MODIFIED ---
+        // Pre-load the first point as the target.
+        // resetState() already set encoders to 0, which matches
+        // the Python script's "home" position.
+        ref_1 = target_1[0];
+        ref_2 = target_2[0];
+        // --- END MODIFIED ---
+        
+        Serial.print("Path loaded. Points received=");
+        Serial.println(points_received);
+      } else {
+        Serial.println("ERR NO_POINTS_RECV");
+      }
       return;
     }
 
@@ -269,6 +285,44 @@ void receivePath() {
 // =========================================================
 // ====================== UTILITIES =========================
 // =========================================================
+
+// --- NEW FUNCTION ---
+// This is the fix for Problem 2 (Rerunning)
+// It resets all working variables to a clean state.
+void resetState() {
+  // Reset PID controller state
+  e_1 = 0; e_prev_1 = 0; sum_e_1 = 0;
+  e_2 = 0; e_prev_2 = 0; sum_e_2 = 0;
+  u_1 = 0; u_2 = 0;
+  uf_prev_1 = 0; uf_prev_2 = 0;
+
+  // Reset position references
+  ref_1 = 0; ref_2 = 0;
+  
+  // Reset encoder counters
+  ATOMIC() {
+    posi_1 = 0;
+    posi_2 = 0;
+  }
+  pos_1 = 0;
+  pos_2 = 0;
+
+  // Reset path/loop counters
+  current_index = 0;
+  total_points = 0;
+  loop_counter = 0;
+  
+  // Reset state machine flags
+  path_loaded = false; // Will be set true by receivePath()
+  path_finished = false;
+  path_settled = false;
+  settle_start_time = 0;
+
+  // Reset log
+  resetLog();
+}
+// --- END NEW FUNCTION ---
+
 void stopMotors() {
   setMotor(0, 0, PWM_pin_1, IN1_1, IN2_1);
   setMotor(0, 0, PWM_pin_2, IN1_2, IN2_2);
@@ -317,12 +371,10 @@ void dumpLogs() {
 
 // Completely clear the log buffer
 void resetLog() {
-  // Optionally zero all entries
+  // Zero all entries
   for (int i = 0; i < MAX_LOGS; i++) {
-    logs[i] = {0, 0, 0, 0, 0, 0, 0};
+    logs[i] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   }
-
-  // Reset log counter
   log_count = 0;
 }
 

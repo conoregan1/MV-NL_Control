@@ -3,7 +3,7 @@
 #define MAX_POINTS 5000
 #define CONTROL_INTERVAL_US 2000      // 2 ms control step
 // #define REF_INTERVAL_US 5000         // 5 ms new reference position
-#define LOG_INTERVAL 15               // log every Nth control step
+#define LOG_INTERVAL 10               // log every Nth control step
 #define MAX_LOGS 2500                 // how many log samples to keep
 
 // ----- Motor pins -----
@@ -28,10 +28,10 @@ volatile int posi_1 = 0, posi_2 = 0;
 float counts_per_rotation = 2100.0;
 
 // PID gains for Motor 1
-float k_p_1 = 8.0, k_d_1 = 0.8, k_i_1 = 50.0;
+float k_p_1 = 18.0, k_d_1 = 0.8, k_i_1 = 80.0;
 
 // PID gains for Motor 2
-float k_p_2 = 8.0, k_d_2 = 0.8, k_i_2 = 50.0;
+float k_p_2 = 18.0, k_d_2 = 0.8, k_i_2 = 80.0;
 // --- END EDIT ---
 
 
@@ -42,18 +42,19 @@ float u_1 = 0, u_2 = 0;
 int u_amplitude_1 = 0, u_amplitude_2 = 0, u_sign_1 = 0, u_sign_2 = 0;
 float ref_1 = 0, ref_2 = 0;
 float uf_prev_1 = 0, uf_prev_2 = 0;
-float alpha_u = 0.9;
+float alpha_u = 0.8;
 
 float u_p_2;
 float u_d_2;
 float u_i_2;
 
-unsigned long loop_prev = 0;
+unsigned long loop_prev = micros();
+unsigned long ref_timer = micros();
 int loop_counter = 0;
 
 // ----- Path data -----
-int target_1[MAX_POINTS];
-int target_2[MAX_POINTS];
+float target_1[MAX_POINTS];
+float target_2[MAX_POINTS];
 int total_points = 0;
 int current_index = 0;
 bool path_loaded = false;
@@ -105,7 +106,7 @@ void loop() {
   // --- Step 2: Run control loop at fixed 5 ms ---
   unsigned long now = micros();
   if (now - loop_prev >= CONTROL_INTERVAL_US) {
-    loop_prev += CONTROL_INTERVAL_US;
+    loop_prev = now;
 
     ATOMIC() {
       pos_1 = posi_1;
@@ -113,8 +114,7 @@ void loop() {
     }
 
     // --- Update reference only every REF_INTERVAL loops ---
-    static unsigned long ref_timer = 0;
-    const unsigned long REF_INTERVAL_US = 5000;  // 5 ms between new points
+    const unsigned long REF_INTERVAL_US = 2000;  // 5 ms between new points
     if (now - ref_timer >= REF_INTERVAL_US && current_index < total_points) {
       ref_timer = now;
       ref_1 = target_1[current_index];
@@ -152,7 +152,6 @@ void loop() {
     } else {
       sum_e_2 = 0.0;
     }
-
 
     u_p_2 = k_p_2 * e_2;
     u_d_2 = k_d_2 * (e_2 - e_prev_2) * 1e6 / CONTROL_INTERVAL_US;
@@ -232,12 +231,17 @@ void receivePath() {
       return;
     }
 
-    // ---- END ----
+    // In receivePath(), after loading all points:
     if (line == "END") {
       receiving = false;
       total_points = points_received;
       path_loaded = true;
       current_index = 0;
+      
+      // ADD THESE LINES:
+      ref_1 = target_1[0];  // Initialize to first target
+      ref_2 = target_2[0];  // Initialize to first target
+      
       Serial.print("Path loaded. Points received=");
       Serial.println(points_received);
       return;

@@ -7,7 +7,7 @@
 
 // --- NEW: Settle logic ---
 #define SETTLE_ERROR_THRESHOLD 1     // How many counts of error is "settled"
-#define SETTLE_DURATION_US 500000  // 500ms hold time to be "settled"
+#define SETTLE_DURATION_US 1000000  // 500ms hold time to be "settled"
 
 // ----- Motor pins -----
 #define ENCA_1 0

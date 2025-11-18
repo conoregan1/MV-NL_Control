@@ -25,31 +25,9 @@
 // ----- Encoder variables -----
 volatile int posi_1 = 0, posi_2 = 0;
 
-//// ----- PID tuning -----
-//float k_p_1 = 18.0, k_d_1 = 0.8, k_i_1 = 80.0;
-//float k_p_2 = 18.0, k_d_2 = 0.8, k_i_2 = 80.0;
-
-// --- GAIN SCHEDULES ---
-
-// MODE 0: TRANSIT (Smooth, Low Vibration)
-float K_P_TRANSIT = 18.0;
-float K_I_TRANSIT = 80.0;
-float K_D_TRANSIT = 0.8;
-
-// MODE 1: LINEAR DRAWING (Standard Tracking)
-float K_P_LINEAR = 18.0;
-float K_I_LINEAR = 80.0;
-float K_D_LINEAR = 0.8;
-
-// MODE 2: CORNER DRAWING (High Stiffness, High Braking)
-// High P to minimize error, High D to stop overshoot at the sharp turn
-float K_P_CORNER = 18.0;
-float K_I_CORNER = 80.0;
-float K_D_CORNER = 0.8;
-
-// Current active gains
-float k_p_1, k_i_1, k_d_1;
-float k_p_2, k_i_2, k_d_2;
+// ----- PID tuning -----
+float k_p_1 = 18.0, k_d_1 = 0.8, k_i_1 = 80.0;
+float k_p_2 = 18.0, k_d_2 = 0.8, k_i_2 = 80.0;
 
 
 // ----- Working vars -----
@@ -71,7 +49,6 @@ int loop_counter = 0;
 // ----- Path data -----
 float target_1[MAX_POINTS];
 float target_2[MAX_POINTS];
-uint8_t target_mode[MAX_POINTS]; 
 int total_points = 0;
 int current_index = 0;
 
@@ -154,32 +131,6 @@ void loop() {
       }
     }
 
-    // --- GAIN SCHEDULING ---
-    int active_mode = 0; // Default to transit
-
-    // Retrieve mode for current step (look back 1 step as index has incremented)
-    if (!path_finished && current_index > 0) {
-       active_mode = target_mode[current_index - 1];
-    } 
-    // If path is finished (holding position), use Corner gains for maximum stiffness
-    else if (path_finished) {
-       active_mode = 2; 
-    }
-
-    // Apply Gains
-    if (active_mode == 0) {       // TRANSIT
-       k_p_1 = K_P_TRANSIT; k_i_1 = K_I_TRANSIT; k_d_1 = K_D_TRANSIT;
-       k_p_2 = K_P_TRANSIT; k_i_2 = K_I_TRANSIT; k_d_2 = K_D_TRANSIT;
-    } 
-    else if (active_mode == 1) {  // LINEAR
-       k_p_1 = K_P_LINEAR;  k_i_1 = K_I_LINEAR;  k_d_1 = K_D_LINEAR;
-       k_p_2 = K_P_LINEAR;  k_i_2 = K_I_LINEAR;  k_d_2 = K_D_LINEAR;
-    } 
-    else {                        // CORNER (Mode 2)
-       k_p_1 = K_P_CORNER;  k_i_1 = K_I_CORNER;  k_d_1 = K_D_CORNER;
-       k_p_2 = K_P_CORNER;  k_i_2 = K_I_CORNER;  k_d_2 = K_D_CORNER;
-    }
-    
     // --- PID Control (Always runs) ---
     // This will follow the path, and then hold the last position
     

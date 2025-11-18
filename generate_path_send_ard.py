@@ -244,7 +244,7 @@ def plot_reference_counts(motor1_counts, motor2_counts, steps_start=0, steps_sha
 if __name__ == "__main__":
 
     # --- CHOOSE YOUR SHAPE TO DRAW ---
-    shape_to_plot = "T"   # "S" = Square, "C" = Circle, "T" = Triangle
+    shape_to_plot = "S"   # "S" = Square, "C" = Circle, "T" = Triangle
     Plot_shape = False     # Whether to plot the shape (Set to True to verify layout)    
     Plot_perf = False      # Whether to plot the path (Set to True to verify layout)
     user = "Conor"
@@ -253,7 +253,7 @@ if __name__ == "__main__":
     
     # --- 1. NEW: SET PARAMETERS BASED ON SHAPE ---    
     if shape_to_plot == "S":
-        Time_For_Drawing = 3      # Total time (in seconds) for *drawing the shape*
+        Time_For_Drawing = 3.0      # Total time (in seconds) for *drawing the shape*
         cluster_ratio = 0.9         # Ratio of cluster steps to total steps for shapes
         cluster_ratio_start = 0.92   # Ratio of cluster steps to total steps for "move to start"
         #percentage_start = 20       # Percentage of *shape steps* for "move to start"
@@ -261,7 +261,7 @@ if __name__ == "__main__":
         STEPS_FOR_START_PATH = indent * 25
         STEPS_FOR_HOME_PATH = indent * 25        
     elif shape_to_plot == "C":
-        Time_For_Drawing = 1.5
+        Time_For_Drawing = 1.0
         cluster_ratio = 0.78         # Not used for circle
         cluster_ratio_start = 0.92   # Use 0.2 for a gentler start/end on the start path
         #percentage_start = 20
@@ -270,7 +270,7 @@ if __name__ == "__main__":
         STEPS_FOR_HOME_PATH = indent * 15 
 
     elif shape_to_plot == "T":
-        Time_For_Drawing = 2.5
+        Time_For_Drawing = 2.0
         cluster_ratio = 0.9
         cluster_ratio_start = 0.78
         #percentage_start = 20
@@ -499,7 +499,7 @@ if MOVE_TO_START_AT_BEGINNING and motor1_counts:
             ser = serial.Serial('/dev/cu.usbmodem11401', 230400, timeout=1)
         elif user == "Hugo":
             ser = serial.Serial('/dev/cu.usbmodem1201', 230400, timeout=1)
-        time.sleep(2)
+        time.sleep(0.5)
     except serial.SerialException as e:
         print(f"\n--- ERROR: Could not open serial port ---")
         print(f"Details: {e}")

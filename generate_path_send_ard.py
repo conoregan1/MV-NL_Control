@@ -8,8 +8,8 @@ import matplotlib.pyplot as plt
 
 # --- 1. CONFIGURE YOUR ROBOT ---
 L1 = 82.0  # Length of arm 1 (e.g., in mm)
-L2 = 75.0  # Length of arm 2 (e.g., in mm)
-indent = 10  # Indent from edge of reachable area (in mm)
+L2 = 100.0  # Length of arm 2 (e.g., in mm)
+indent = 25  # Indent from edge of reachable area (in mm)
 COUNTS_PER_ROTATION = 2100.0
 
 # --- NEW SETTINGS ---
@@ -18,13 +18,7 @@ RETURN_TO_HOME_AT_END = True
 Plotting_Freq = 0.002      # Time (in seconds) between points. 0.002 = 500Hz
 
 
-# --- CHOOSE YOUR SHAPE TO DRAW ---
-shape_to_plot = "C"   # "S" = Square, "C" = Circle, "T" = Triangle
-Plot_shape = True     # Whether to plot the shape (Set to True to verify layout)    
-Plot_perf = True      # Whether to plot the path (Set to True to verify layout)
-user = "Conor"
-#user = "Jamie"
-#user ="Hugo"
+
 
 #arrays for data storing
 ref_1_data = []
@@ -127,10 +121,14 @@ def generate_eased_line(x_start, y_start, x_end, y_end, steps, cluster_steps):
 def generate_square(centre_x, centre_y, side_length, steps_per_side, cluster_steps):
     half_side = side_length / 2.0
     diag_side = (2 * ((half_side)**2))**(1/2)
-    c1 = (centre_x + diag_side, centre_y) # top-left
-    c2 = (centre_x, centre_y - diag_side) # bottom-left
-    c3 = (centre_x - diag_side, centre_y) # bottom-right
-    c4 = (centre_x, centre_y + diag_side) # top-right
+    c1 = (centre_x + half_side, centre_y + half_side) # top-left
+    c2 = (centre_x - half_side, centre_y + half_side) # bottom-left
+    c3 = (centre_x - half_side, centre_y - half_side) # bottom-right
+    c4 = (centre_x + half_side, centre_y - half_side) # top-right
+    # c1 = (centre_x + diag_side, centre_y) # top-left
+    # c2 = (centre_x, centre_y + diag_side) # bottom-left
+    # c3 = (centre_x - diag_side, centre_y) # bottom-right
+    # c4 = (centre_x, centre_y - diag_side) # top-right
     print(f"Square side: {steps_per_side} steps = {cluster_steps} (cluster) + {steps_per_side - 2*cluster_steps} (linear) + {cluster_steps} (cluster)")
     points = []
     points.extend(generate_eased_line(c1[0], c1[1], c2[0], c2[1], steps_per_side, cluster_steps)[:-1])
@@ -244,40 +242,55 @@ def plot_reference_counts(motor1_counts, motor2_counts, steps_start=0, steps_sha
 
 # --- 6. MAIN EXECUTION ---
 if __name__ == "__main__":
+
+    # --- CHOOSE YOUR SHAPE TO DRAW ---
+    shape_to_plot = "T"   # "S" = Square, "C" = Circle, "T" = Triangle
+    Plot_shape = False     # Whether to plot the shape (Set to True to verify layout)    
+    Plot_perf = False      # Whether to plot the path (Set to True to verify layout)
+    user = "Conor"
+    #user = "Jamie"
+    #user ="Hugo"
     
     # --- 1. NEW: SET PARAMETERS BASED ON SHAPE ---    
     if shape_to_plot == "S":
-        Time_For_Drawing = 5.0      # Total time (in seconds) for *drawing the shape*
-        cluster_ratio = 0.5         # Ratio of cluster steps to total steps for shapes
-        cluster_ratio_start = 0.75   # Ratio of cluster steps to total steps for "move to start"
-        percentage_start = 12       # Percentage of *shape steps* for "move to start"
-        percentage_home = 12        # Percentage of *shape steps* for "return to home"
-        
+        Time_For_Drawing = 3      # Total time (in seconds) for *drawing the shape*
+        cluster_ratio = 0.9         # Ratio of cluster steps to total steps for shapes
+        cluster_ratio_start = 0.92   # Ratio of cluster steps to total steps for "move to start"
+        #percentage_start = 20       # Percentage of *shape steps* for "move to start"
+        #percentage_home = 20        # Percentage of *shape steps* for "return to home"
+        STEPS_FOR_START_PATH = indent * 25
+        STEPS_FOR_HOME_PATH = indent * 25        
     elif shape_to_plot == "C":
-        Time_For_Drawing = 2.0
-        cluster_ratio = 0.0         # Not used for circle
-        cluster_ratio_start = 0.75   # Use 0.2 for a gentler start/end on the start path
-        percentage_start = 10
-        percentage_home = 10
+        Time_For_Drawing = 1.5
+        cluster_ratio = 0.78         # Not used for circle
+        cluster_ratio_start = 0.92   # Use 0.2 for a gentler start/end on the start path
+        #percentage_start = 20
+        #percentage_home = 20
+        STEPS_FOR_START_PATH = indent * 15
+        STEPS_FOR_HOME_PATH = indent * 15 
 
     elif shape_to_plot == "T":
-        Time_For_Drawing = 3.0
-        cluster_ratio = 0.5
-        cluster_ratio_start = 0.75
-        percentage_start = 12
-        percentage_home = 12
+        Time_For_Drawing = 2.5
+        cluster_ratio = 0.9
+        cluster_ratio_start = 0.78
+        #percentage_start = 20
+        #percentage_home = 20
+        STEPS_FOR_START_PATH = indent * 15
+        STEPS_FOR_HOME_PATH = indent * 15
     
     # --- 2. NEW: STEP CALCULATION (based on per-shape params) ---
     STEPS_FOR_SHAPE = int(Time_For_Drawing / Plotting_Freq)
-    STEPS_FOR_START_PATH = int(STEPS_FOR_SHAPE * (percentage_start / 100.0))
-    STEPS_FOR_HOME_PATH = int(STEPS_FOR_SHAPE * (percentage_home / 100.0))
+    #STEPS_FOR_START_PATH = int(STEPS_FOR_SHAPE * (percentage_start / 100.0))
+    #STEPS_FOR_START_PATH = 250
+    #STEPS_FOR_HOME_PATH = int(STEPS_FOR_SHAPE * (percentage_home / 100.0))
+    #STEPS_FOR_HOME_PATH = 250
     TOTAL_STEPS_SENT = STEPS_FOR_START_PATH + STEPS_FOR_SHAPE + STEPS_FOR_HOME_PATH
 
     print(f"--- Step Calculation ---")
     print(f"Shape Drawing Time: {Time_For_Drawing}s")
     print(f"Shape Steps: {STEPS_FOR_SHAPE} (at {Plotting_Freq*1000:.1f} ms/step)")
-    print(f"Start Path Steps: {STEPS_FOR_START_PATH} ({percentage_start} % of shape steps)")
-    print(f"Home Path Steps: {STEPS_FOR_HOME_PATH} ({percentage_home} % of shape steps)")
+    #print(f"Start Path Steps: {STEPS_FOR_START_PATH} ({percentage_start} % of shape steps)")
+    #print(f"Home Path Steps: {STEPS_FOR_HOME_PATH} ({percentage_home} % of shape steps)")
     print(f"TOTAL STEPS TO SEND: {TOTAL_STEPS_SENT}")
     print("--------------------------\n")
     

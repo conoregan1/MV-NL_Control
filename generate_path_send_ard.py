@@ -84,53 +84,38 @@ def generate_line(x_start, y_start, x_end, y_end, steps):
     return points
 
 def generate_eased_line(x_start, y_start, x_end, y_end, steps, cluster_steps):
-    points = [] # Will store (x, y, mode)
+    points = []
     (x_s, y_s) = (x_start, y_start)
     (x_e, y_e) = (x_end, y_end)
-    
     if steps <= 0:
-        return [(x_s, y_s, 2)] # Single point treated as corner
-        
-    # --- 1. Replicate your existing step calculation ---
+        return [(x_s, y_s)]
     linear_steps = steps - (2 * cluster_steps)
     if linear_steps < 0:
+        print(f"WARNING: Reducing cluster_steps. {steps} total segments is not enough for {cluster_steps} cluster points per side.")
         cluster_steps = steps // 2
         linear_steps = steps - (2 * cluster_steps)
-    
-    # --- 2. Generate (t, mode) pairs ---
-    # Mode 2 = Corner (Cluster), Mode 1 = Linear (Straight)
-    
-    t_data = [] # List of (t_value, mode_id)
-
-    # Start Cluster (Corner)
-    t_data.append((0.0, 2)) 
+        print(f"        Set cluster_steps = {cluster_steps}, linear_steps = {linear_steps}")
+    t_values = [0.0]
     for i in range(cluster_steps, 0, -1):
-        t_data.append((0.5 ** i, 2))
-
-    # Middle Linear (Straight)
+        t_values.append(0.5 ** i)
     t_start = 0.5 ** cluster_steps if cluster_steps > 0 else 0.0
     t_end = 1.0 - (0.5 ** cluster_steps) if cluster_steps > 0 else 1.0
-    linear_segment_count = max(1, linear_steps)
     
+    linear_segment_count = max(1, linear_steps)
     for i in range(1, linear_steps):
         fraction = i / linear_segment_count
-        t_val = t_start + (t_end - t_start) * fraction
-        t_data.append((t_val, 1)) # Mode 1 for linear parts
-
-    # End Cluster (Corner)
+        t_values.append(t_start + (t_end - t_start) * fraction)
     for i in range(1, cluster_steps + 1):
-        t_data.append((1.0 - (0.5 ** i), 2))
-    t_data.append((1.0, 2))
+        t_values.append(1.0 - (0.5 ** i))
+    t_values.append(1.0)
     
-    # Sort by t value to keep path order
-    t_data.sort(key=lambda x: x[0])
+    # FIX: Sort the t_values to ensure monotonic progression
+    t_values.sort()
     
-    # --- 3. Calculate X, Y based on t ---
-    for t, mode in t_data:
+    for t in t_values:
         x = x_s + (x_e - x_s) * t
         y = y_s + (y_e - y_s) * t
-        points.append((x, y, mode))
-        
+        points.append((x, y))
     return points
 
 def generate_square(centre_x, centre_y, side_length, steps_per_side, cluster_steps):
@@ -356,19 +341,15 @@ if __name__ == "__main__":
 
     motor1_counts = []
     motor2_counts = []
-    mode_shape = []
     
-    # Note: generate_square/triangle now return (x,y,mode) because they call the new generate_eased_line
-    for x, y, mode in xy_points: 
+    for x, y in xy_points:
         angles = calculate_ik(x, y, L1, L2)
         if angles:
             theta1, theta2 = angles
             count1 = radians_to_counts(theta1, COUNTS_PER_ROTATION)
             count2 = radians_to_counts(theta2, COUNTS_PER_ROTATION)
-            
             motor1_counts.append(count1)
-            motor2_counts.append(-count2)
-            mode_shape.append(mode) # Store the mode (1 or 2)
+            motor2_counts.append(-count2) # Keeping your inversion
     
     
     # --- MODIFIED: Generate "Move to Start" ---
@@ -493,12 +474,9 @@ if MOVE_TO_START_AT_BEGINNING and motor1_counts:
 
         
         
-    mode_start_path = [0] * len(motor1_start_path)
-    mode_home_path  = [0] * len(motor1_home_path)
-
+    # --- NEW: Combine all paths ---
     final_motor1_counts = motor1_start_path + motor1_counts + motor1_home_path
     final_motor2_counts = motor2_start_path + motor2_counts + motor2_home_path
-    final_modes = mode_start_path + mode_shape + mode_home_path
     
     # --- MODIFIED: Plot the reference motor counts being sent ---
     if Plot_shape:
@@ -528,7 +506,6 @@ if MOVE_TO_START_AT_BEGINNING and motor1_counts:
         exit()
 
 
-
     # === Send the full dataset (MODIFIED) ===
     num_points = len(final_motor1_counts) # Use the new final list
     print(f"\nSending {num_points} total points to Pico...")
@@ -537,9 +514,9 @@ if MOVE_TO_START_AT_BEGINNING and motor1_counts:
     ser.write(f"START {num_points}\n".encode('utf-8'))
     time.sleep(0.5)
 
-# --- Send to Pico (Send 3 values per line) ---
-    for a1, a2, m in zip(final_motor1_counts, final_motor2_counts, final_modes):
-        ser.write(f"{a1} {a2} {m}\n".encode('utf-8'))
+    # --- Send all positions (MODIFIED) ---
+    for a1, a2 in zip(final_motor1_counts, final_motor2_counts): # Use the new final lists
+        ser.write(f"{a1} {a2}\n".encode('utf-8'))
 
     ser.write(b"END\n")
     print("All data sent. Waiting for debug messages from Pico...\n")

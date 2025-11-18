@@ -1,0 +1,301 @@
+#include <SimplyAtomic.h>
+
+// --- Configuration for Ramp Test ---
+#define SAMPLE_INTERVAL_US 50000     // Sample data every 50ms (20 Hz)
+// Total samples for the full ramp up (0 to 255) and ramp down (255 to 0) and back (0 to -255 and -255 to 0)
+// To go from -255 to +255 and back to -255 is approx 4 * 255 steps. We use 2500 samples for a ~125s test duration.
+#define NUM_SAMPLES 2500 
+#define MAX_PWM_INPUT 255          // Maximum PWM value
+#define MOTOR_STOP_DURATION_MS 2000  // Duration to stop and clear buffers between tests (2 seconds)
+
+// ----- Motor pins (from original code) -----
+#define ENCA_1 0
+#define ENCB_1 1
+#define PWM_pin_1 2
+#define IN1_1 3
+#define IN2_1 4
+
+#define ENCA_2 6
+#define ENCB_2 7
+#define PWM_pin_2 8
+#define IN1_2 9
+#define IN2_2 10
+
+// ----- Encoder and Velocity Variables -----
+volatile long posi_1 = 0; 
+volatile long posi_2 = 0;
+long prev_posi_1 = 0;
+long prev_posi_2 = 0;
+
+// ----- Logging State Variables -----
+enum TestPhase {
+    WAITING_FOR_START,  // Waiting for serial 'START' command
+    PRE_TEST_STOP,      // Stopping motors and resetting before test
+    RAMP_TEST,          // Applying triangular input wave (-255 to 255 and back)
+    TEST_COMPLETE       // Test is done, dump data
+};
+TestPhase current_phase = WAITING_FOR_START;
+int current_sample = 0;
+unsigned long test_start_time = 0;
+unsigned long last_sample_time = 0;
+
+// --- RAM log buffer ---
+struct LogEntry {
+    unsigned long time_ms; // Time since start of test phase
+    int input_u;         // Applied control input (u)
+    float speed_1;       // Motor 1 speed (counts/s)
+    float speed_2;       // Motor 2 speed (counts/s)
+};
+LogEntry logs[NUM_SAMPLES];
+
+
+// =========================================================
+// ======================== SETUP ===========================
+// =========================================================
+void setup() {
+    // Set baud rate high enough for fast data transfer
+    Serial.begin(230400);
+
+    // Configure motor and encoder pins
+    pinMode(ENCA_1, INPUT);
+    pinMode(ENCB_1, INPUT);
+    pinMode(ENCA_2, INPUT);
+    pinMode(ENCB_2, INPUT);
+    attachInterrupt(digitalPinToInterrupt(ENCA_1), readEncoder_1, RISING);
+    attachInterrupt(digitalPinToInterrupt(ENCA_2), readEncoder_2, RISING);
+
+    pinMode(PWM_pin_1, OUTPUT);
+    pinMode(IN1_1, OUTPUT);
+    pinMode(IN2_1, OUTPUT);
+    pinMode(PWM_pin_2, OUTPUT);
+    pinMode(IN1_2, OUTPUT);
+    pinMode(IN2_2, OUTPUT);
+
+    stopMotors();
+    Serial.println("Motor ID Setup: Ready. Send 'START' to begin Ramp Test (-255 to +255 and back).");
+    resetLog();
+}
+
+// =========================================================
+// ======================== MAIN LOOP =======================
+// =========================================================
+void loop() {
+    handleSerialInput();
+
+    unsigned long now = micros();
+
+    switch (current_phase) {
+        case WAITING_FOR_START:
+            // Wait for serial command
+            break;
+
+        case PRE_TEST_STOP:
+            stopMotors();
+            // Check if the stop duration has passed
+            if (millis() - test_start_time > MOTOR_STOP_DURATION_MS) {
+                Serial.println("--- Starting Non-linear Ramp Test ---");
+                resetTestState();
+                current_phase = RAMP_TEST;
+            }
+            break;
+
+        case RAMP_TEST: {
+            // Calculate the PWM input (u) based on the current sample number
+            // We want to traverse from -255 to +255 and then back down to -255
+            const int total_steps = 4 * MAX_PWM_INPUT; // 4 * 255 = 1020 steps in a full cycle
+            
+            // Map the current_sample index (0 to NUM_SAMPLES-1) to the range of total_steps
+            // This determines the step size per sample to complete the waveform in NUM_SAMPLES
+            long ramp_index = (long)current_sample * total_steps / NUM_SAMPLES;
+            
+            // The ramp is defined in 4 quadrants (0-255, 255-0, 0-(-255), -255-0)
+            int segment = ramp_index / MAX_PWM_INPUT;
+            int offset = ramp_index % MAX_PWM_INPUT;
+            
+            int input_u;
+            
+            if (segment == 0) { // Going up: -255 to 0
+                input_u = -MAX_PWM_INPUT + offset;
+            } else if (segment == 1) { // Going up: 0 to +255
+                input_u = offset;
+            } else if (segment == 2) { // Going down: +255 to 0
+                input_u = MAX_PWM_INPUT - offset;
+            } else { // Going down: 0 to -255 (or wraps back to start)
+                input_u = -offset;
+            }
+            
+            // Constrain u to the safe range just in case of calculation/float errors
+            input_u = constrain(input_u, -MAX_PWM_INPUT, MAX_PWM_INPUT);
+            
+            // Determine direction and absolute PWM value
+            int dir = (input_u > 0) ? 1 : ((input_u < 0) ? -1 : 0);
+            int pwmVal = abs(input_u);
+
+            // Apply the calculated input to both motors
+            setMotor(dir, pwmVal, PWM_pin_1, IN1_1, IN2_1);
+            setMotor(dir, pwmVal, PWM_pin_2, IN1_2, IN2_2);
+
+            // Log data only if the sample interval has passed
+            if (now - last_sample_time >= SAMPLE_INTERVAL_US) {
+                logSample(now, input_u); // Pass the input_u for logging
+            }
+
+            // Check if test duration is complete
+            if (current_sample >= NUM_SAMPLES) {
+                stopMotors();
+                dumpLogs("RAMP_TEST_DATA");
+                Serial.println("Ramp Test Complete. All data dumped.");
+                current_phase = TEST_COMPLETE;
+            }
+            break;
+        }
+
+        case TEST_COMPLETE:
+            // Wait for user to save data and send 'START' again
+            break;
+    }
+}
+
+
+// =========================================================
+// ======================= FUNCTIONS =========================
+// =========================================================
+
+// Resets all state variables for a new test run
+void resetTestState() {
+    resetLog();
+    ATOMIC() {
+        posi_1 = 0;
+        posi_2 = 0;
+    }
+    prev_posi_1 = 0;
+    prev_posi_2 = 0;
+    current_sample = 0;
+    test_start_time = micros();
+    last_sample_time = micros();
+}
+
+// Log a single sample of data (Position and Speed)
+void logSample(unsigned long now, int input_u) {
+    // Check array bounds
+    if (current_sample >= NUM_SAMPLES) {
+        return;
+    }
+
+    // Calculate delta time in seconds
+    float dt_s = (float)(now - last_sample_time) / 1.0e6;
+    last_sample_time = now;
+
+    // Get current encoder positions safely
+    long current_posi_1, current_posi_2;
+    ATOMIC() {
+        current_posi_1 = posi_1;
+        current_posi_2 = posi_2;
+    }
+    
+    // Calculate speed (counts/s)
+    long delta_pos_1 = current_posi_1 - prev_posi_1;
+    long delta_pos_2 = current_posi_2 - prev_posi_2;
+
+    // Update previous position for next iteration
+    prev_posi_1 = current_posi_1;
+    prev_posi_2 = current_posi_2;
+
+    // Speed calculation: (delta_counts / dt)
+    float speed_1 = (float)delta_pos_1 / dt_s;
+    float speed_2 = (float)delta_pos_2 / dt_s;
+    
+    // Store the log entry
+    logs[current_sample] = {
+        (now - test_start_time) / 1000, // Time in ms
+        input_u, // The dynamic input value
+        speed_1,
+        speed_2
+    };
+
+    current_sample++;
+}
+
+// Check for user serial input to start the test
+void handleSerialInput() {
+    if (Serial.available()) {
+        String line = Serial.readStringUntil('\n');
+        line.trim();
+        if (line.equalsIgnoreCase("START")) {
+            if (current_phase == WAITING_FOR_START || current_phase == TEST_COMPLETE) {
+                // Start the test sequence with the stop phase
+                Serial.println("Received START. Preparing for Ramp Test...");
+                test_start_time = millis(); // Initialize the timer for the stop phase
+                current_phase = PRE_TEST_STOP;
+            } else {
+                Serial.println("Test already running or preparing.");
+            }
+        }
+    }
+}
+
+// Dump log buffer to serial monitor
+void dumpLogs(const char* header) {
+    Serial.print("--- BEGIN LOG: ");
+    Serial.print(header);
+    Serial.println(" ---");
+    
+    // Print header row for easy CSV import
+    // Note: The speed vs input curve is generated by plotting Speed_1/2 vs Input_u
+    Serial.println("Time_ms,Input_u,Speed_1_counts_per_s,Speed_2_counts_per_s");
+
+    for (int i = 0; i < NUM_SAMPLES; i++) {
+        Serial.print(logs[i].time_ms);
+        Serial.print(',');
+        Serial.print(logs[i].input_u);
+        Serial.print(',');
+        Serial.print(logs[i].speed_1, 2); // Print with 2 decimal places
+        Serial.print(',');
+        Serial.println(logs[i].speed_2, 2); // Print with 2 decimal places
+    }
+    Serial.print("--- END LOG: ");
+    Serial.print(header);
+    Serial.println(" ---");
+}
+
+// Completely clear the log buffer
+void resetLog() {
+    for (int i = 0; i < NUM_SAMPLES; i++) {
+        logs[i] = {0, 0, 0.0f, 0.0f};
+    }
+}
+
+void stopMotors() {
+    setMotor(0, 0, PWM_pin_1, IN1_1, IN2_1);
+    setMotor(0, 0, PWM_pin_2, IN1_2, IN2_2);
+}
+
+// Drives a single motor
+void setMotor(int dir, int pwmVal, int pwm_pin, int in1, int in2) {
+    // Ensure PWM value is within 0-255 range
+    pwmVal = constrain(pwmVal, 0, MAX_PWM_INPUT); 
+    
+    analogWrite(pwm_pin, pwmVal);
+    if (dir == 1) {
+        digitalWrite(in1, HIGH);
+        digitalWrite(in2, LOW);
+    } else if (dir == -1) {
+        digitalWrite(in1, LOW);
+        digitalWrite(in2, HIGH);
+    } else {
+        digitalWrite(in1, LOW);
+        digitalWrite(in2, LOW);
+    }
+}
+
+// ---- Encoder ISRs ----
+void readEncoder_1() {
+    // Check encoder B to determine direction
+    int b = digitalRead(ENCB_1);
+    posi_1 += (b > 0) ? 1 : -1;
+}
+void readEncoder_2() {
+    // Check encoder B to determine direction
+    int b = digitalRead(ENCB_2);
+    posi_2 += (b > 0) ? 1 : -1;
+}

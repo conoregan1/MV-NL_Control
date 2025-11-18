@@ -203,19 +203,20 @@ if __name__ == "__main__":
 
     # --- 1. PARAMETERS ---    
     if shape_to_plot == "S":
-        Time_For_Drawing = 3.0
-        STEPS_FOR_START_PATH = indent * 25
-        STEPS_FOR_HOME_PATH = indent * 25   
+        Time_For_Drawing = 2.95
+        STEPS_FOR_START_PATH = indent * 35
+        STEPS_FOR_HOME_PATH = indent * 35   
         GAUSSIAN_SIGMA = 2.5      
     elif shape_to_plot == "C":
-        Time_For_Drawing = 1.0
-        STEPS_FOR_START_PATH = indent * 15
-        STEPS_FOR_HOME_PATH = indent * 15 
+        Time_For_Drawing = 0.95
+        STEPS_FOR_START_PATH = indent * 25
+        STEPS_FOR_HOME_PATH = indent * 25 
+        GAUSSIAN_SIGMA = 2.5
     elif shape_to_plot == "T":
-        Time_For_Drawing = 2.0
-        STEPS_FOR_START_PATH = indent * 15
-        STEPS_FOR_HOME_PATH = indent * 15
-        GAUSSIAN_SIGMA = 2.5 
+        Time_For_Drawing = 1.95
+        STEPS_FOR_START_PATH = indent * 25
+        STEPS_FOR_HOME_PATH = indent * 25
+        GAUSSIAN_SIGMA = 2.5
     
     STEPS_FOR_SHAPE = int(Time_For_Drawing / Plotting_Freq)
     TOTAL_STEPS_SENT = STEPS_FOR_START_PATH + STEPS_FOR_SHAPE + STEPS_FOR_HOME_PATH

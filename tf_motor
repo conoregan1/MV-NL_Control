@@ -21,6 +21,9 @@
 #define IN1_2 9
 #define IN2_2 10
 
+#define DITHER_AMPLITUDE 10      // ± PWM added as dither
+#define DITHER_FREQUENCY_HZ 200  // Dither toggle rate
+
 // ----- Encoder and Velocity Variables -----
 volatile long posi_1 = 0; 
 volatile long posi_2 = 0;
@@ -130,6 +133,8 @@ void loop() {
             // Determine direction and absolute PWM value
             int dir = (input_u > 0) ? 1 : ((input_u < 0) ? -1 : 0);
             int pwmVal = abs(input_u);
+            pwmVal = applyDither(pwmVal);
+
 
             // Apply the calculated input to both motors
             setMotor(dir, pwmVal, PWM_pin_1, IN1_1, IN2_1);
@@ -287,6 +292,25 @@ void setMotor(int dir, int pwmVal, int pwm_pin, int in1, int in2) {
         digitalWrite(in2, LOW);
     }
 }
+
+int applyDither(int pwmVal) {
+    static unsigned long lastToggle = 0;
+    static int dither = DITHER_AMPLITUDE;
+
+    unsigned long now = micros();
+
+    // Toggle the dither polarity at a fixed frequency
+    if (now - lastToggle >= (1000000UL / (DITHER_FREQUENCY_HZ * 2))) {
+        dither = -dither;
+        lastToggle = now;
+    }
+
+    int withDither = pwmVal + dither;
+
+    // Ensure within 0–255 for analogWrite
+    return constrain(withDither, 0, MAX_PWM_INPUT);
+}
+
 
 // ---- Encoder ISRs ----
 void readEncoder_1() {
